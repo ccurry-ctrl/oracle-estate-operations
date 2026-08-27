@@ -26,17 +26,23 @@ The documented deployment path assumes:
 - Git for source control
 - operator access sufficient to run Docker and create the selected runtime directory
 
-Oracle currently documents the Autonomous AI Database Free container with:
+Validated project image:
 
-- Oracle APEX, ORDS, and Database Actions included
-- recommended allocation of 4 CPUs and 8 GB RAM
-- 20 GB database storage allocation
+```text
+ghcr.io/oracle/adb-free:latest-26ai
+```
+
+Oracle Autonomous AI Database Free includes:
+
+- Oracle APEX
+- ORDS
+- Database Actions
+- optional Mongo-compatible API
+- database connectivity on container port `1522`
 - HTTPS for ORDS/APEX on container port `8443`
-- database connectivity through container port `1522`
-- optional Mongo-compatible API on container port `27017`
 - `SYS_ADMIN` capability and `/dev/fuse` access
 
-The exact image tag should be checked against current Oracle documentation before deployment. Oracle currently publishes ADB Free images through its supported container registries.
+The reference deployment uses an 8 GiB Docker memory ceiling. Host capacity must be evaluated independently before starting the container.
 
 ## Deployment Variables
 Choose these values for the target environment before running the procedure.
@@ -48,8 +54,8 @@ HOST_HTTPS_PORT=8443
 HOST_DB_PORT=1521
 LAB_HOST=<hostname-or-ip>
 LAB_ROOT=/path/to/runtime/oracle-estate-operations
-DATA_ROOT=/path/to/runtime/oracle-estate-operations/data
-IMAGE=<current Oracle ADB Free image>
+IMAGE=ghcr.io/oracle/adb-free:latest-26ai
+VOLUME_NAME=oracle-estate-adb-data
 ```
 
 Example only for the Stack.Idlewood reference lab:
@@ -57,7 +63,6 @@ Example only for the Stack.Idlewood reference lab:
 ```text
 LAB_HOST=stack
 LAB_ROOT=/srv/workshop/oracle-estate-operations
-DATA_ROOT=/srv/workshop/oracle-estate-operations/data
 ```
 
 The example values are not requirements. A second operator should be able to select an appropriate hostname and filesystem path without knowing anything about Stack.Idlewood.
@@ -113,91 +118,141 @@ ss -lnt | grep -E ':8443|:1521' || true
 ### STOP
 Do not continue if Docker, required resources, FUSE access, or port assignments are unresolved.
 
-## 2. Create Runtime Storage
+## 2. Create Runtime and Secret Storage
 
-Set the local values selected above, then create runtime storage outside the Git repository:
+Create local runtime paths outside the Git repository:
 
 ```bash
 export LAB_ROOT=/path/to/runtime/oracle-estate-operations
-export DATA_ROOT="${LAB_ROOT}/data"
-mkdir -p "${DATA_ROOT}"
+mkdir -p "${LAB_ROOT}/secrets"
+chmod 700 "${LAB_ROOT}/secrets"
+```
+
+Do not store generated Oracle database files directly in the Git working tree.
+
+### PASS
+Runtime and secret storage exist outside the Git working tree.
+
+### STOP
+Do not continue if runtime state or credentials would be stored in the repository.
+
+## 3. Obtain the Oracle Container Image
+
+```bash
+export IMAGE=ghcr.io/oracle/adb-free:latest-26ai
+docker pull "${IMAGE}"
 ```
 
 Verify:
 
 ```bash
-ls -ld "${LAB_ROOT}" "${DATA_ROOT}"
+docker images | grep adb-free
 ```
 
 ### PASS
-Runtime storage exists outside the Git working tree and is writable by the deployment operator.
+The `latest-26ai` image is present locally.
 
 ### STOP
-Do not continue if runtime state would be stored inside the repository or on an unintended filesystem.
-
-## 3. Obtain the Oracle Container Image
-
-Set the image selected from current Oracle documentation:
-
-```bash
-export IMAGE=<current Oracle ADB Free image>
-docker pull "${IMAGE}"
-```
-
-Verify the image is present:
-
-```bash
-docker images | grep -E 'adb-free|oracle'
-```
-
-### PASS
-The expected image is present locally.
-
-### STOP
-Do not continue if the image pull fails, the image source is unclear, or licensing terms have not been reviewed.
+Do not continue if the image pull fails or the image source is unclear.
 
 ## 4. Prepare Credentials
 
-Create strong temporary lab credentials for:
+Create an untracked local env file such as:
 
-- Autonomous database `ADMIN`
-- generated wallet protection
+```text
+/path/to/runtime/oracle-estate-operations/secrets/adb.env
+```
 
-Do not place these values in the repository, shell history, committed `.env` files, or runbook examples.
+Example structure:
 
-Preferred approaches include runtime-only environment variables, an untracked local environment file, or an appropriate secrets mechanism supported by Docker.
+```text
+ADMIN_PASSWORD=<strong-password>
+WALLET_PASSWORD=<strong-password>
+```
+
+Do not commit this file.
+
+The `ADMIN_PASSWORD` must satisfy Oracle's policy:
+
+- 12 to 30 characters
+- at least one uppercase letter
+- at least one lowercase letter
+- at least one number
+- must not contain the username `ADMIN`
+
+Lock down the file:
+
+```bash
+chmod 600 "${LAB_ROOT}/secrets/adb.env"
+```
 
 ### PASS
-Required credentials are available to the deployment command without being committed to Git.
+Credentials meet Oracle policy and are available to Docker without being committed to Git.
 
 ### STOP
-Do not continue if credentials would be stored in tracked project files.
+Do not continue if credential validation is uncertain or secrets would be stored in tracked files.
 
-## 5. Start the Container
+## 5. Create and Prepare Persistent Volume
 
-The Oracle-documented runtime requirements translate to the following Docker pattern:
+Create a Docker-managed volume:
+
+```bash
+export VOLUME_NAME=oracle-estate-adb-data
+docker volume create "${VOLUME_NAME}"
+```
+
+The 26ai image runs as:
+
+```text
+uid=1001(oracle)
+gid=1001(oinstall)
+```
+
+Confirm if needed:
+
+```bash
+docker run --rm --entrypoint id "${IMAGE}"
+```
+
+A newly created local Docker volume may be owned by `root:root`, which prevents the `oracle` user from writing `/u01/data`. Prepare the volume ownership using numeric IDs:
+
+```bash
+VOLUME_PATH=$(docker volume inspect "${VOLUME_NAME}" --format '{{ .Mountpoint }}')
+chown -R 1001:1001 "${VOLUME_PATH}"
+ls -ld "${VOLUME_PATH}"
+```
+
+Use numeric UID/GID values rather than host account names because the host may resolve GID `1001` to a different local group name.
+
+### PASS
+The Docker volume exists and its data directory is owned by UID/GID `1001:1001`.
+
+### STOP
+Do not continue if `/u01/data` would not be writable by the image's `oracle` user.
+
+## 6. Start the Container
 
 ```bash
 docker run -d \
   --name "${CONTAINER_NAME}" \
+  --memory=8g \
+  --env-file "${LAB_ROOT}/secrets/adb.env" \
+  -e WORKLOAD_TYPE="${WORKLOAD_TYPE}" \
   -p "${HOST_DB_PORT}:1522" \
   -p "${HOST_HTTPS_PORT}:8443" \
-  -e WORKLOAD_TYPE="${WORKLOAD_TYPE}" \
-  -e WALLET_PASSWORD="${WALLET_PASSWORD}" \
-  -e ADMIN_PASSWORD="${ADMIN_PASSWORD}" \
   --cap-add SYS_ADMIN \
   --device /dev/fuse \
-  --volume "${DATA_ROOT}:/u01/data" \
+  --volume "${VOLUME_NAME}:/u01/data" \
   "${IMAGE}"
 ```
 
 Notes:
 
 - Oracle also provides a Mongo-compatible API on port `27017`. It is not required for project V1 and should remain unexposed unless a later requirement justifies it.
-- Host port values are examples. Remap them if the host already uses those ports.
-- A future Compose implementation may replace this command once the manual deployment has been validated.
+- Host port values are examples and may be remapped.
+- A future Compose implementation may replace this command after the manual path is fully validated.
 
-## 6. Verify Container State
+## 7. Verify Container State
 
 Check the container:
 
@@ -208,18 +263,28 @@ docker ps --filter "name=${CONTAINER_NAME}"
 Review startup logs:
 
 ```bash
-docker logs "${CONTAINER_NAME}"
+docker logs --tail 100 "${CONTAINER_NAME}"
 ```
 
-Do not treat `running` alone as application readiness. Continue only when the database and built-in tools have completed initialization.
+Monitor resource usage:
+
+```bash
+docker stats --no-stream "${CONTAINER_NAME}"
+free -h
+```
+
+Do not treat `running` alone as readiness. First initialization may take several minutes while Oracle unpacks database files, generates wallets/certificates, initializes the database, and starts ORDS.
 
 ### PASS
-The container remains running and initialization completes without unresolved fatal errors.
+- container health reports `healthy`
+- Oracle database starts successfully
+- ORDS reports successful initialization
+- host remains within the planned resource budget
 
 ### STOP
-Stop if the container repeatedly exits, reports unresolved initialization failures, or cannot access persistent storage/FUSE.
+Stop if the container exits, repeatedly fails health checks, reports unresolved initialization errors, cannot write `/u01/data`, or causes unacceptable host memory pressure.
 
-## 7. Verify APEX / ORDS
+## 8. Verify APEX / ORDS
 
 From a browser with network access to the host, open:
 
@@ -235,18 +300,20 @@ The APEX endpoint responds and the APEX landing/login workflow is reachable.
 ### STOP
 Do not proceed to schema or application deployment until the ORDS/APEX endpoint is reachable.
 
-## 8. Record Deployment Outcome
+## 9. Record Deployment Outcome
 
-Record only non-secret deployment facts in project notes or the implementation PR:
+Record only non-secret deployment facts:
 
 - Oracle image and tag
 - Ubuntu version
 - Docker version
 - mapped ports
-- runtime storage location pattern
+- Docker memory ceiling
+- volume name
 - deployment date
+- observed steady-state memory
 - validation result
-- any justified deviation from this procedure
+- justified deviations
 
 Do not record passwords, wallet contents, private certificates, or host-specific secrets.
 
@@ -255,17 +322,28 @@ If deployment fails:
 
 1. Stop at the failed gate.
 2. Capture the failing command and relevant non-secret logs.
-3. Determine whether the failure is host-specific, Docker-specific, image-specific, or project-specific.
-4. Update this procedure only when the finding is reusable beyond one host.
-5. Keep one-off host fixes in local implementation notes unless they represent a generally useful pattern.
+3. Remove the failed container before retrying.
+4. If failure occurred during first-time database initialization, recreate the persistent volume unless the failure is known not to have modified database state.
+5. Determine whether the failure is host-specific, Docker-specific, image-specific, or project-specific.
+6. Update this procedure only when the finding is reusable beyond one host.
+
+## Cleanup
+After the validated deployment path is established:
+
+- remove obsolete Oracle images no longer required
+- remove failed/test containers
+- remove abandoned volumes
+- remove temporary runtime directories that are no longer used
+- retain only credentials required for the active lab and keep them outside Git
 
 ## Completion Criteria
 This procedure is complete when:
 
-- the Oracle Autonomous AI Database Free container is running,
-- persistent runtime state is outside the Git repository,
+- the Oracle Autonomous AI Database Free 26ai container reports healthy,
+- persistent runtime state is stored in the prepared Docker volume,
 - APEX/ORDS is reachable,
 - no secrets have been committed,
+- the host remains healthy,
 - the deployment can be explained and repeated from this document alone.
 
 ## Portability Notes
@@ -281,7 +359,7 @@ Documented assumptions:
 
 Environment-specific choices:
 - hostname or IP address
-- filesystem paths
+- filesystem paths for local secrets/runtime notes
 - host port mappings
 - DNS and optional reverse proxy/ingress configuration
 
