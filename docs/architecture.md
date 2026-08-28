@@ -17,17 +17,45 @@ The repository must remain fictional and sanitized. It must not contain employer
 
 ## V1 Scope
 
-V1 models approximately 20 fictional Oracle databases supporting several fictional applications.
+V1 models approximately 20 fictional Oracle PDBs supporting several fictional applications.
 
 The estate will include:
 
-- single-instance and RAC databases;
+- single-instance and RAC CDBs;
+- multiple PDBs within CDBs;
+- RAC instance and node topology as supporting infrastructure detail;
 - primary and standby Data Guard roles;
 - multiple application owners and support contacts;
-- expected database services and node placement;
+- expected database services and instance placement;
 - patch groups and maintenance schedules;
-- database, account/schema, tablespace, and service metadata;
+- account/schema and service metadata;
 - one documented exception to the normal estate standard.
+
+## Inventory Grain
+
+The primary operational inventory is **PDB-grain**: one row per PDB.
+
+A DBA, application owner, or support engineer should be able to begin with the PDB and answer the common operational questions without first reasoning through infrastructure topology.
+
+CDB, RAC instance, cluster, and node data enrich that inventory but do not change its grain.
+
+```text
+DB_CLUSTER
+   |
+   +-- CDB: ABC
+         |
+         +-- DB_INSTANCE: ABC1 -> node01
+         +-- DB_INSTANCE: ABC2 -> node02
+         +-- DB_INSTANCE: ABC3 -> node03
+         +-- DB_INSTANCE: ABC4 -> node04
+         |
+         +-- PDB: P001   <- main inventory row
+         +-- PDB: P002   <- main inventory row
+         +-- PDB: P003   <- main inventory row
+         +-- PDB: P004   <- main inventory row
+```
+
+`V_ESTATE_STATUS` must therefore return exactly one row per PDB. Infrastructure reporting uses supporting views such as `V_CDB_INSTANCE_STATUS` so one-to-many RAC instance data cannot duplicate rows in the main inventory.
 
 ## Architecture
 
@@ -53,25 +81,26 @@ The estate will include:
 
 Oracle is the system of record for the lab.
 
-Initial tables are expected to model:
+Initial tables model:
 
-- database inventory;
-- application and ownership metadata;
+- projects and operational ownership;
+- environments;
 - clusters and nodes;
-- services and expected placement;
-- DR configuration and database role;
-- account/schema status;
-- tablespace and datafile capacity;
-- patch groups, schedules, and status;
-- documented standard exceptions.
+- CDBs;
+- RAC instances and their node placement;
+- PDBs as the primary inventory objects;
+- services and expected instance placement;
+- Data Guard relationships at the CDB level;
+- account/schema ownership at the PDB level;
+- patch groups and CDB maintenance schedules;
+- documented PDB or CDB standard exceptions.
 
-Views will separate stored metadata from operational questions. Initial views should include concepts such as:
+Views separate stored metadata from operational questions. Initial views include:
 
-- estate status;
-- database detail;
+- PDB estate status/main inventory;
+- CDB and RAC instance topology;
+- PDB and account ownership;
 - service compliance;
-- account health;
-- tablespace capacity;
 - patch readiness/calendar;
 - DR status;
 - standards exceptions.
@@ -84,10 +113,10 @@ APEX is the human-facing operations portal, not the source of operational logic.
 
 Initial pages:
 
-1. **Estate Overview** - estate health, database count, roles, clusters, upcoming maintenance, and exceptions.
-2. **Database Detail** - role, cluster/node, services, ownership, accounts, storage, DR, and patch information for one database.
-3. **Service Compliance** - expected service placement compared with observed placement.
-4. **Patch Schedule** - planned RU maintenance by database/application/environment and completion state.
+1. **Estate Overview** - one row per PDB with application, ownership, environment, CDB, cluster, status, and operational context.
+2. **Database Detail** - PDB detail with its parent CDB and drill-down access to RAC instance/node topology, services, ownership, accounts, DR, and patch information.
+3. **Service Compliance** - expected service placement compared with observed RAC instance placement.
+4. **Patch Schedule** - planned RU maintenance by CDB/application/environment and completion state.
 
 The application should remain intentionally small. The goal is to demonstrate useful operational visibility, not build a complete enterprise monitoring product.
 
