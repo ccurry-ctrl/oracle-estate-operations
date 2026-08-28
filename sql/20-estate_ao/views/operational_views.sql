@@ -1,23 +1,24 @@
 whenever sqlerror exit sql.sqlcode rollback
 
 -- Main inventory: exactly one row per PDB.
+-- Present the business/application identity first, then the Oracle hosting detail.
 create or replace view v_estate_status as
-select p.pdb_id,
+select pr.project_code,
+       pr.application_name as description,
        p.pdb_name,
-       c.cdb_name,
-       c.db_unique_name,
        e.environment_code,
-       c.architecture_type,
+       c.cdb_name,
        c.database_role,
-       c.oracle_version,
-       cl.cluster_name,
-       pr.project_code,
-       pr.application_name,
+       p.open_mode,
        pr.owner_name,
        pr.sme_name,
        pr.manager_name,
-       p.open_mode,
-       p.active_flag
+       c.oracle_version,
+       c.architecture_type,
+       cl.cluster_name,
+       p.active_flag,
+       p.pdb_id,
+       c.db_unique_name
   from ESTATE.pdb p
   join ESTATE.cdb c on c.cdb_id = p.cdb_id
   join ESTATE.environment e on e.environment_id = p.environment_id
