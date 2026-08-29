@@ -17,25 +17,49 @@ The standard exists to reduce unnecessary variation and make databases easier fo
 
 ## V1 Standards
 
+### Inventory Grain
+
+The main inventory is one row per PDB.
+
+Each PDB must identify:
+
+- its PDB name;
+- parent CDB;
+- environment classification such as DEV, QA, UAT, PERF, or PROD;
+- application/project relationship;
+- primary owner/support contacts;
+- current operational state.
+
+CDB, RAC instance, cluster, and node data are supporting infrastructure context. They must be available for drill-down and reporting without changing the one-row-per-PDB grain of the main inventory.
+
+### CDB and RAC Topology
+
+Each CDB must identify:
+
+- CDB name and DB unique name;
+- deployment type: single instance or RAC;
+- current database role;
+- Oracle version;
+- cluster where applicable.
+
+For RAC CDBs, inventory must identify each database instance and the cluster node on which it runs. For example, CDB `ABC` may have instances `ABC1`, `ABC2`, `ABC3`, and `ABC4` across four nodes.
+
+PDBs belong to the CDB, not to individual RAC instances.
+
 ### Naming and Identity
 
-Each database must have:
+Surrogate relational keys should use Oracle identity columns where the value has no operational meaning.
 
-- a unique database name;
-- environment classification such as DEV, QA, UAT, or PROD;
-- application name and description;
-- primary owner/support contact;
-- assigned DBA/support owner;
-- deployment type: single instance or RAC.
+Human-entered identifiers that carry operational meaning should remain explicit attributes and use uniqueness constraints where appropriate.
 
 ### High Availability and DR
 
-Production databases must have a documented availability model.
+Production CDBs must have a documented availability model.
 
 Where Data Guard is used, inventory must identify:
 
 - current database role;
-- primary/standby relationship;
+- primary/standby CDB relationship;
 - intended protection or availability purpose;
 - last known validation state.
 
@@ -46,10 +70,10 @@ A non-standard DR pattern is permitted only as a documented exception.
 Application services must define:
 
 - service name;
-- database;
+- PDB served;
 - intended application/purpose;
-- expected node placement where applicable;
-- observed node placement;
+- expected RAC instance placement where applicable;
+- observed instance placement;
 - compliance status derived from expected versus observed state.
 
 ### Backup and Recovery
@@ -65,19 +89,21 @@ V1 will model these attributes rather than perform real RMAN backups.
 
 ### Monitoring and Ownership
 
-Every database must be represented in the estate inventory with current operational ownership.
+Every PDB must be represented in the estate inventory with current operational ownership.
 
 The model should make it possible to answer:
 
+- What PDB is this application using?
 - Who owns this application?
 - Who supports this database?
-- What role is the database currently serving?
-- What services should be running?
+- Which CDB hosts the PDB?
+- Which RAC instances and nodes support that CDB?
+- What services should be running and where?
 - Is the database inside its expected operational standard?
 
 ### Accounts and Schemas
 
-The operations model will track selected account/schema metadata including:
+The operations model will track selected account/schema metadata at the PDB level including:
 
 - account status;
 - last password change or equivalent age indicator;
@@ -97,13 +123,12 @@ The model will expose tablespace and datafile capacity sufficient to identify:
 
 ### Patching
 
-Each database will belong to a patch group or maintenance cohort.
+CDBs will belong to patch groups or maintenance cohorts because RU lifecycle state is infrastructure-level data.
 
 Patch scheduling metadata will include:
 
-- target database;
-- environment;
-- application owner;
+- target CDB;
+- affected PDB/application context through inventory relationships;
 - planned maintenance date;
 - patch/RU identifier;
 - status;
@@ -115,7 +140,7 @@ Exceptions are first-class operational data, not hidden notes.
 
 Every exception should include:
 
-- affected object or database;
+- affected PDB, CDB, or estate scope;
 - standard being deviated from;
 - business/technical reason;
 - owner;

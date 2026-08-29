@@ -1,0 +1,8 @@
+# Local operator files, wallets, credentials, and runtime-only artifacts
+local/
+.local/
+*.zip
+
+# Editor / OS noise
+.DS_Store
+.vscode/settings.json
