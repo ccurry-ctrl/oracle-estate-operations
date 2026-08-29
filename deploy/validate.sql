@@ -29,14 +29,14 @@ select owner, object_name, object_type, status
    and status <> 'VALID';
 
 prompt === Main inventory grain check ===
-select pdb_id, count(*) row_count
+select db_unique_name, pdb_name, count(*) row_count
   from ESTATE_AO.v_estate_status
- group by pdb_id
+ group by db_unique_name, pdb_name
 having count(*) <> 1;
 
-prompt Expected: no rows. V_ESTATE_STATUS must return exactly one row per PDB.
+prompt Expected: no rows. V_ESTATE_STATUS must return one row per PDB occurrence on each DB_UNIQUE_NAME.
 
-prompt === Multiple primary projects per PDB ===
+prompt === Multiple primary projects per PDB occurrence ===
 select pdb_id, count(*) primary_project_count
   from ESTATE.pdb_project
  where primary_flag = 'Y'
@@ -46,22 +46,24 @@ having count(*) > 1;
 prompt Expected: no rows.
 
 prompt === RAC instance topology ===
-select c.cdb_name,
+select c.db_unique_name,
+       c.cdb_name,
        count(i.instance_id) instance_count,
        count(distinct i.node_id) node_count
   from ESTATE.cdb c
   left join ESTATE.db_instance i on i.cdb_id = c.cdb_id
- group by c.cdb_name
- order by c.cdb_name;
+ group by c.db_unique_name, c.cdb_name
+ order by c.db_unique_name;
 
 prompt === PDB to CDB inventory ===
 select p.pdb_name,
+       c.db_unique_name,
        c.cdb_name,
        e.environment_code
   from ESTATE.pdb p
   join ESTATE.cdb c on c.cdb_id = p.cdb_id
   join ESTATE.environment e on e.environment_id = p.environment_id
- order by c.cdb_name, p.pdb_name;
+ order by c.db_unique_name, p.pdb_name;
 
 prompt === APPESTATE system privileges ===
 select privilege
