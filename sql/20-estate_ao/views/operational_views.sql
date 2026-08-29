@@ -1,12 +1,14 @@
 whenever sqlerror exit sql.sqlcode rollback
 
--- Main inventory: exactly one row per PDB.
+-- Main inventory: one row per PDB occurrence on a DB_UNIQUE_NAME.
+-- A mirrored PDB therefore appears once for each physical Data Guard peer.
 -- Present the business/application identity first, then the Oracle hosting detail.
 create or replace view v_estate_status as
 select pr.project_code,
        pr.application_name as description,
        p.pdb_name,
        e.environment_code,
+       c.db_unique_name,
        c.cdb_name,
        c.database_role,
        p.open_mode,
@@ -17,8 +19,7 @@ select pr.project_code,
        c.architecture_type,
        cl.cluster_name,
        p.active_flag,
-       p.pdb_id,
-       c.db_unique_name
+       p.pdb_id
   from ESTATE.pdb p
   join ESTATE.cdb c on c.cdb_id = p.cdb_id
   join ESTATE.environment e on e.environment_id = p.environment_id
@@ -49,6 +50,7 @@ select c.cdb_id,
 
 create or replace view v_pdb_ownership as
 select p.pdb_name,
+       c.db_unique_name,
        c.cdb_name,
        e.environment_code,
        pr.project_code,
@@ -65,6 +67,7 @@ select p.pdb_name,
 
 create or replace view v_account_ownership as
 select p.pdb_name,
+       c.db_unique_name,
        c.cdb_name,
        a.account_name,
        a.account_type,
@@ -82,6 +85,7 @@ select p.pdb_name,
 
 create or replace view v_service_compliance as
 select p.pdb_name,
+       c.db_unique_name,
        c.cdb_name,
        s.service_name,
        i.instance_name,
@@ -97,7 +101,8 @@ select p.pdb_name,
   join ESTATE.cluster_node n on n.node_id = i.node_id;
 
 create or replace view v_patch_readiness as
-select c.cdb_name,
+select c.db_unique_name,
+       c.cdb_name,
        c.database_role,
        pg.patch_group_name,
        pg.target_ru,
@@ -109,8 +114,9 @@ select c.cdb_name,
   join ESTATE.patch_group pg on pg.patch_group_id = ps.patch_group_id;
 
 create or replace view v_dr_status as
-select p.cdb_name primary_cdb,
-       s.cdb_name standby_cdb,
+select p.cdb_name,
+       p.db_unique_name primary_db_unique_name,
+       s.db_unique_name standby_db_unique_name,
        dr.protection_mode,
        dr.transport_status,
        dr.apply_status
@@ -119,7 +125,7 @@ select p.cdb_name primary_cdb,
   join ESTATE.cdb s on s.cdb_id = dr.standby_cdb_id;
 
 create or replace view v_active_exceptions as
-select coalesce(p.pdb_name, c.cdb_name) target_name,
+select coalesce(p.pdb_name, c.db_unique_name) target_name,
        case when x.pdb_id is not null then 'PDB'
             when x.cdb_id is not null then 'CDB'
             else 'ESTATE'
