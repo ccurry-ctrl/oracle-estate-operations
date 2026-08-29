@@ -90,43 +90,43 @@ prompt === Seeding CDBs ===
 
 insert into ESTATE.cdb
     (cdb_name, db_unique_name, cluster_id, architecture_type, database_role, oracle_version, description)
-select 'NHR001E', 'NHR001E', cluster_id, 'RAC', 'NONE', '19c',
-       'General Development and QA CDB.'
+select 'NHR001', 'NHR001E', cluster_id, 'RAC', 'NONE', '19c',
+       'General Development and QA CDB in East.'
   from ESTATE.db_cluster where cluster_name = 'NONPROD-EAST';
 
 insert into ESTATE.cdb
     (cdb_name, db_unique_name, cluster_id, architecture_type, database_role, oracle_version, description)
-select 'NHR002E', 'NHR002E', cluster_id, 'RAC', 'PRIMARY', '19c',
+select 'NHR002', 'NHR002E', cluster_id, 'RAC', 'PRIMARY', '19c',
        'East Test peer; currently PRIMARY.'
   from ESTATE.db_cluster where cluster_name = 'NONPROD-EAST';
 
 insert into ESTATE.cdb
     (cdb_name, db_unique_name, cluster_id, architecture_type, database_role, oracle_version, description)
-select 'NHR002W', 'NHR002W', cluster_id, 'RAC', 'STANDBY', '19c',
+select 'NHR002', 'NHR002W', cluster_id, 'RAC', 'STANDBY', '19c',
        'West Test peer; currently STANDBY.'
   from ESTATE.db_cluster where cluster_name = 'NONPROD-WEST';
 
 insert into ESTATE.cdb
     (cdb_name, db_unique_name, cluster_id, architecture_type, database_role, oracle_version, description)
-select 'NHR003E', 'NHR003E', cluster_id, 'RAC', 'PRIMARY', '19c',
+select 'NHR003', 'NHR003E', cluster_id, 'RAC', 'PRIMARY', '19c',
        'East Acceptance/UAT peer; currently PRIMARY.'
   from ESTATE.db_cluster where cluster_name = 'NONPROD-EAST';
 
 insert into ESTATE.cdb
     (cdb_name, db_unique_name, cluster_id, architecture_type, database_role, oracle_version, description)
-select 'NHR003W', 'NHR003W', cluster_id, 'RAC', 'STANDBY', '19c',
+select 'NHR003', 'NHR003W', cluster_id, 'RAC', 'STANDBY', '19c',
        'West Acceptance/UAT peer; currently STANDBY.'
   from ESTATE.db_cluster where cluster_name = 'NONPROD-WEST';
 
 insert into ESTATE.cdb
     (cdb_name, db_unique_name, cluster_id, architecture_type, database_role, oracle_version, description)
-select 'PHR001E', 'PHR001E', cluster_id, 'RAC', 'PRIMARY', '19c',
+select 'PHR001', 'PHR001E', cluster_id, 'RAC', 'PRIMARY', '19c',
        'East production peer; currently PRIMARY.'
   from ESTATE.db_cluster where cluster_name = 'PROD-EAST';
 
 insert into ESTATE.cdb
     (cdb_name, db_unique_name, cluster_id, architecture_type, database_role, oracle_version, description)
-select 'PHR001W', 'PHR001W', cluster_id, 'RAC', 'STANDBY', '19c',
+select 'PHR001', 'PHR001W', cluster_id, 'RAC', 'STANDBY', '19c',
        'West production peer; currently STANDBY.'
   from ESTATE.db_cluster where cluster_name = 'PROD-WEST';
 
@@ -172,7 +172,7 @@ select c.cdb_id, e.environment_id, x.pdb_name, 'READ WRITE', x.description
       select 'D004', 'Finance Analytics DEV' from dual union all
       select 'D005', 'Warehouse Operations DEV' from dual
   ) x
- where c.cdb_name = 'NHR001E'
+ where c.db_unique_name = 'NHR001E'
    and e.environment_code = 'DEV';
 
 insert into ESTATE.pdb (cdb_id, environment_id, pdb_name, open_mode, description)
@@ -186,7 +186,7 @@ select c.cdb_id, e.environment_id, x.pdb_name, 'READ WRITE', x.description
       select 'Q004', 'Finance Analytics QA' from dual union all
       select 'Q005', 'Warehouse Operations QA' from dual
   ) x
- where c.cdb_name = 'NHR001E'
+ where c.db_unique_name = 'NHR001E'
    and e.environment_code = 'QA';
 
 -- Test is isolated and mirrored across East and West.
@@ -205,7 +205,7 @@ select c.cdb_id,
       select 'T004', 'Finance Analytics TEST' from dual union all
       select 'T005', 'Warehouse Operations TEST' from dual
   ) x
- where c.cdb_name in ('NHR002E','NHR002W')
+ where c.db_unique_name in ('NHR002E','NHR002W')
    and e.environment_code = 'TEST';
 
 -- UAT is independently isolated and mirrored across East and West.
@@ -224,7 +224,7 @@ select c.cdb_id,
       select 'A004', 'Finance Analytics UAT' from dual union all
       select 'A005', 'Warehouse Operations UAT' from dual
   ) x
- where c.cdb_name in ('NHR003E','NHR003W')
+ where c.db_unique_name in ('NHR003E','NHR003W')
    and e.environment_code = 'UAT';
 
 -- Production is isolated on dedicated infrastructure and mirrored East/West.
@@ -243,7 +243,7 @@ select c.cdb_id,
       select 'P004', 'Finance Analytics PROD' from dual union all
       select 'P005', 'Warehouse Operations PROD' from dual
   ) x
- where c.cdb_name in ('PHR001E','PHR001W')
+ where c.db_unique_name in ('PHR001E','PHR001W')
    and e.environment_code = 'PROD';
 
 prompt === Mapping PDBs to primary projects ===
@@ -261,24 +261,24 @@ insert into ESTATE.dr_relationship
 select p.cdb_id, s.cdb_id, 'MAXIMUM PERFORMANCE', 'VALID', 'APPLYING'
   from ESTATE.cdb p
   cross join ESTATE.cdb s
- where p.cdb_name = 'NHR002E'
-   and s.cdb_name = 'NHR002W';
+ where p.db_unique_name = 'NHR002E'
+   and s.db_unique_name = 'NHR002W';
 
 insert into ESTATE.dr_relationship
     (primary_cdb_id, standby_cdb_id, protection_mode, transport_status, apply_status)
 select p.cdb_id, s.cdb_id, 'MAXIMUM PERFORMANCE', 'VALID', 'APPLYING'
   from ESTATE.cdb p
   cross join ESTATE.cdb s
- where p.cdb_name = 'NHR003E'
-   and s.cdb_name = 'NHR003W';
+ where p.db_unique_name = 'NHR003E'
+   and s.db_unique_name = 'NHR003W';
 
 insert into ESTATE.dr_relationship
     (primary_cdb_id, standby_cdb_id, protection_mode, transport_status, apply_status)
 select p.cdb_id, s.cdb_id, 'MAXIMUM PERFORMANCE', 'VALID', 'APPLYING'
   from ESTATE.cdb p
   cross join ESTATE.cdb s
- where p.cdb_name = 'PHR001E'
-   and s.cdb_name = 'PHR001W';
+ where p.db_unique_name = 'PHR001E'
+   and s.db_unique_name = 'PHR001W';
 
 commit;
 
