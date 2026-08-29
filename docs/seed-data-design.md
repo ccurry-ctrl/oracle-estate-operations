@@ -54,6 +54,7 @@ CDB names describe broad infrastructure class and physical location. They do **n
 Examples:
 
 - `NHR001E` = non-production CDB in the East region
+- `NHR002W` = non-production CDB in the West region
 - `PHR001E` = production CDB in the East region
 - `PHR001W` = production CDB in the West region
 
@@ -61,7 +62,7 @@ The middle identifier and numeric sequence provide a stable, unique infrastructu
 
 ### Why Data Guard role is not in the name
 
-A production CDB is not permanently a "primary database" or a "standby database." Either geographically separated peer may become primary after a planned switchover or an unplanned failover.
+A CDB participating in Data Guard is not permanently a "primary database" or a "standby database." Either geographically separated peer may become primary after a planned switchover or an unplanned failover.
 
 For example:
 
@@ -77,7 +78,7 @@ PHR001W = PRIMARY
 
 Neither database is renamed. `database_role` is therefore stored as operational data (`PRIMARY` / `STANDBY`) rather than encoded in the CDB name.
 
-Production Data Guard peers must be geographically separated. A standby in the same region does not satisfy the estate's regional DR intent.
+The same rule applies to production-like Test and UAT peers.
 
 ## PDB naming model
 
@@ -103,15 +104,40 @@ P001  Production
 
 This allows a non-production CDB to host multiple application environments without falsely assigning an environment to the CDB itself.
 
-## Environment and infrastructure isolation
+## Infrastructure model
 
-The environment model is deliberately more nuanced than simply "prod" and "nonprod."
+Isolation is primarily expressed at the CDB and PDB level, not by pretending every environment owns dedicated physical hardware.
+
+The fictional estate uses four RAC clusters:
+
+```text
+NONPROD-EAST
+├── NHR001E   Development + QA
+├── NHR002E   Test primary peer
+└── NHR003E   UAT primary peer
+
+NONPROD-WEST
+├── NHR002W   Test standby peer
+└── NHR003W   UAT standby peer
+
+PROD-EAST
+└── PHR001E   Production primary peer
+
+PROD-WEST
+└── PHR001W   Production standby peer
+```
+
+Test and UAT are separated from Development/QA by CDB boundary and from each other by separate CDBs. They do not require fictional dedicated Exadata hardware simply to demonstrate application-tier isolation.
+
+Test and UAT also have West-region peers so their topology can validate production-like Data Guard, RAC, and regional failover behavior before production.
+
+Production remains physically separated from all non-production infrastructure.
+
+## Environment isolation
 
 ### Development and QA
 
-Development and ordinary QA may share general-purpose non-production infrastructure. These environments are expected to experience more frequent change and do not need the same isolation as final production validation tiers.
-
-Example:
+Development and ordinary QA share a general-purpose non-production CDB. These environments are expected to experience more frequent change and do not require regional Data Guard peers in V1.
 
 ```text
 NHR001E
@@ -123,57 +149,79 @@ NHR001E
 
 ### Test / pre-production
 
-Test is the final production-like test tier and must be isolated from Development/QA. Development activity should not be able to change the infrastructure underneath final pre-production testing.
-
-Test also remains separate from Acceptance/UAT. Sharing the two would reduce the value of independently validating a production-like configuration.
-
-Example:
+Test is the final production-like technical validation tier. It is isolated from Development/QA and from UAT, and it mirrors production's East/West peer model.
 
 ```text
-NHR002E
-├── T001  HR Reporting TEST
-├── T002  Order Management TEST
+NHR002E  PRIMARY
+├── T001
+├── T002
+└── ...
+
+NHR002W  STANDBY
+├── T001
+├── T002
 └── ...
 ```
+
+This gives Test a clean, stable environment where Data Guard and regional behavior can be exercised before production.
 
 ### Acceptance / UAT
 
-Acceptance/UAT is independently isolated and production-like. It is not mixed with Development/QA or Test.
-
-Example:
+Acceptance/UAT is independently isolated from both Development/QA and Test. It also mirrors production's East/West topology.
 
 ```text
-NHR003E
-├── A001  HR Reporting UAT
-├── A002  Order Management UAT
+NHR003E  PRIMARY
+├── A001
+├── A002
+└── ...
+
+NHR003W  STANDBY
+├── A001
+├── A002
 └── ...
 ```
 
+This preserves UAT as a stable production-like business validation environment without coupling it to the final technical Test tier.
+
 ### Production
 
-Production is isolated from all non-production infrastructure.
-
-The production estate uses geographically separated peer CDBs. Matching production PDBs exist on both sides of the Data Guard relationship because the PDBs move with the CDB role rather than being tied to one region as the permanent production site.
+Production is isolated from all non-production infrastructure and uses geographically separated East/West peers.
 
 ```text
-East
-PHR001E
-├── P001  HR Reporting
-├── P002  Order Management
+PHR001E  PRIMARY
+├── P001
+├── P002
 └── ...
 
-West
-PHR001W
-├── P001  HR Reporting
-├── P002  Order Management
+PHR001W  STANDBY
+├── P001
+├── P002
 └── ...
 ```
 
 The East/West suffix identifies location. The `database_role` column identifies which peer is currently primary.
 
-## Environment vocabulary
+## Production-like progression
 
-The normalized environment values used by the inventory are:
+The estate deliberately becomes more production-like as an application moves toward release:
+
+```text
+D / Q
+  shared general non-production CDB
+        ↓
+T
+  isolated CDB + East/West peers
+        ↓
+A
+  independently isolated CDB + East/West peers
+        ↓
+P
+  dedicated production infrastructure + East/West peers
+```
+
+Test and UAT match production's **logical topology and recovery model**, while production still receives its own physical RAC infrastructure.
+
+## Environment vocabulary
 
 | Code | Meaning |
 | --- | --- |
@@ -187,17 +235,19 @@ The normalized environment values used by the inventory are:
 
 Environment and Oracle database role are separate concepts. An environment describes the workload's purpose. `PRIMARY` / `STANDBY` describes the current Oracle role of a CDB.
 
-`PERF` remains a valid environment even though V1 does not require a dedicated performance CDB. Infrastructure should only be created when an operational requirement justifies it.
+`PERF` remains a valid environment even though V1 does not require a dedicated performance CDB.
 
 ## V1 topology
 
-| Purpose | CDB | Region | Current role | Isolation intent |
+| Purpose | CDB | Region | Current role | Cluster class |
 | --- | --- | --- | --- | --- |
-| Development / QA | `NHR001E` | East | NONE | General-purpose non-production |
-| Test | `NHR002E` | East | NONE | Isolated production-like final test tier |
-| Acceptance / UAT | `NHR003E` | East | NONE | Independently isolated production-like acceptance tier |
-| Production | `PHR001E` | East | PRIMARY | Production only |
-| Production | `PHR001W` | West | STANDBY | Geographically separate production peer |
+| Development / QA | `NHR001E` | East | NONE | NONPROD-EAST |
+| Test | `NHR002E` | East | PRIMARY | NONPROD-EAST |
+| Test | `NHR002W` | West | STANDBY | NONPROD-WEST |
+| Acceptance / UAT | `NHR003E` | East | PRIMARY | NONPROD-EAST |
+| Acceptance / UAT | `NHR003W` | West | STANDBY | NONPROD-WEST |
+| Production | `PHR001E` | East | PRIMARY | PROD-EAST |
+| Production | `PHR001W` | West | STANDBY | PROD-WEST |
 
 The current PRIMARY/STANDBY assignment is seed state, not naming semantics.
 
@@ -271,6 +321,7 @@ The following are not required to prove the V1 model and should not be invented 
 - a separate CDB prefix for every PDB environment
 - a CDB name that encodes PRIMARY or STANDBY
 - a permanent "DR CDB" identity for a database that may become primary
+- dedicated physical Exadata hardware for every non-production CDB
 - unnecessary one-to-one mapping between applications and CDBs
 
 Additional infrastructure should be introduced only when it demonstrates an operational requirement that the existing model cannot represent.
