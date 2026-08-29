@@ -11,8 +11,8 @@ The inventory separates business identity, application environment, infrastructu
 The hierarchy is:
 
 1. Project/application identifies what the workload is and who owns it.
-2. PDB identifies the application environment and is the primary inventory unit.
-3. CDB identifies the broad infrastructure class and physical region hosting the PDB.
+2. PDB identifies the application environment and is the primary business-facing inventory unit.
+3. Oracle `DB_NAME` identifies the database family; `DB_UNIQUE_NAME` identifies the specific physical Data Guard peer hosting that PDB occurrence.
 4. RAC instances and nodes describe supporting infrastructure beneath the CDB.
 5. Data Guard role is current operational state and can change without changing database identity.
 
@@ -20,7 +20,17 @@ This supports the Main Inventory goal: answer **What is this? Where is it? Is it
 
 ## PDB-first inventory grain
 
-A PDB is the primary unit of the Main Inventory. Each PDB is represented by exactly one Main Inventory row.
+A PDB is the primary business-facing unit of the Main Inventory, but the row grain is **one PDB occurrence per `DB_UNIQUE_NAME`**.
+
+A logical PDB name can therefore appear more than once when it exists on geographically separated Data Guard peers. For example:
+
+```text
+Project  Description    PDB   Environment  DB_UNIQUE_NAME  Role
+001      HR Reporting   P001  PROD         PHR001E         PRIMARY
+001      HR Reporting   P001  PROD         PHR001W         STANDBY
+```
+
+Those are not duplicate inventory rows. They represent the same logical production PDB on two distinct database peers.
 
 CDB, cluster, RAC instance, and node information are supporting infrastructure details. A RAC PDB does not belong to one RAC instance. The CDB contains both its PDBs and its RAC instances; services describe where application workload is expected to run.
 
@@ -29,36 +39,44 @@ Conceptually:
 ```text
 DB_CLUSTER
    |
-   +-- CDB
+   +-- CDB / DB_UNIQUE_NAME
          |
          +-- DB_INSTANCE -> cluster node
          |
-         +-- PDB -> environment -> project/application
+         +-- PDB occurrence -> environment -> project/application
 ```
 
 The Main Inventory is intentionally ordered from business context toward infrastructure detail:
 
 ```text
-Project -> Description -> PDB -> Environment -> CDB -> operational/support detail
+Project -> Description -> PDB -> Environment -> DB_UNIQUE_NAME -> operational/support detail
 ```
 
-## CDB naming model
+## Oracle database naming model
 
-CDB names describe broad infrastructure class and physical location. They do **not** encode the PDB environment or current Data Guard role.
+The model distinguishes Oracle `DB_NAME` from `DB_UNIQUE_NAME`.
 
-- `N...` = non-production infrastructure
-- `P...` = production infrastructure
-- trailing `E` = East region
-- trailing `W` = West region
+- `cdb_name` stores Oracle `DB_NAME` and may be shared by Data Guard peers.
+- `db_unique_name` stores Oracle `DB_UNIQUE_NAME` and uniquely identifies the physical database represented in inventory.
+- `N...` = non-production database family.
+- `P...` = production database family.
+- trailing `E` on `DB_UNIQUE_NAME` = East region.
+- trailing `W` on `DB_UNIQUE_NAME` = West region.
 
 Examples:
 
-- `NHR001E` = non-production CDB in the East region
-- `NHR002W` = non-production CDB in the West region
-- `PHR001E` = production CDB in the East region
-- `PHR001W` = production CDB in the West region
+```text
+DB_NAME  DB_UNIQUE_NAME
+NHR001   NHR001E
+NHR002   NHR002E
+NHR002   NHR002W
+NHR003   NHR003E
+NHR003   NHR003W
+PHR001   PHR001E
+PHR001   PHR001W
+```
 
-The middle identifier and numeric sequence provide a stable, unique infrastructure identity. They should not be interpreted as the environment of every PDB hosted by the CDB.
+The middle identifier and numeric sequence provide a stable database-family identity. The regional suffix belongs to `DB_UNIQUE_NAME`, which is the useful operational identifier when distinguishing Data Guard peers.
 
 ### Why Data Guard role is not in the name
 
@@ -76,7 +94,7 @@ PHR001E = STANDBY
 PHR001W = PRIMARY
 ```
 
-Neither database is renamed. `database_role` is therefore stored as operational data (`PRIMARY` / `STANDBY`) rather than encoded in the CDB name.
+Neither database is renamed. `database_role` is therefore stored as operational data (`PRIMARY` / `STANDBY`) rather than encoded in `DB_UNIQUE_NAME`.
 
 The same rule applies to production-like Test and UAT peers.
 
@@ -199,7 +217,7 @@ PHR001W  STANDBY
 └── ...
 ```
 
-The East/West suffix identifies location. The `database_role` column identifies which peer is currently primary.
+The `DB_UNIQUE_NAME` suffix identifies location. The `database_role` column identifies which peer is currently primary.
 
 ## Production-like progression
 
@@ -239,15 +257,15 @@ Environment and Oracle database role are separate concepts. An environment descr
 
 ## V1 topology
 
-| Purpose | CDB | Region | Current role | Cluster class |
-| --- | --- | --- | --- | --- |
-| Development / QA | `NHR001E` | East | NONE | NONPROD-EAST |
-| Test | `NHR002E` | East | PRIMARY | NONPROD-EAST |
-| Test | `NHR002W` | West | STANDBY | NONPROD-WEST |
-| Acceptance / UAT | `NHR003E` | East | PRIMARY | NONPROD-EAST |
-| Acceptance / UAT | `NHR003W` | West | STANDBY | NONPROD-WEST |
-| Production | `PHR001E` | East | PRIMARY | PROD-EAST |
-| Production | `PHR001W` | West | STANDBY | PROD-WEST |
+| Purpose | DB_NAME | DB_UNIQUE_NAME | Region | Current role | Cluster class |
+| --- | --- | --- | --- | --- | --- |
+| Development / QA | `NHR001` | `NHR001E` | East | NONE | NONPROD-EAST |
+| Test | `NHR002` | `NHR002E` | East | PRIMARY | NONPROD-EAST |
+| Test | `NHR002` | `NHR002W` | West | STANDBY | NONPROD-WEST |
+| Acceptance / UAT | `NHR003` | `NHR003E` | East | PRIMARY | NONPROD-EAST |
+| Acceptance / UAT | `NHR003` | `NHR003W` | West | STANDBY | NONPROD-WEST |
+| Production | `PHR001` | `PHR001E` | East | PRIMARY | PROD-EAST |
+| Production | `PHR001` | `PHR001W` | West | STANDBY | PROD-WEST |
 
 The current PRIMARY/STANDBY assignment is seed state, not naming semantics.
 
@@ -267,7 +285,7 @@ These project codes provide the numeric portion of the PDB naming convention whi
 
 Application ownership must not be inferred solely from where an object lives.
 
-A PDB has a primary project/application, but accounts and schemas inside that PDB can belong to another project. This is common for integration accounts, database links, shared schemas, and cross-application dependencies.
+A PDB occurrence has a primary project/application, but accounts and schemas inside that PDB can belong to another project. This is common for integration accounts, database links, shared schemas, and cross-application dependencies.
 
 V1 seed data should intentionally include at least one example where an account resides in one project's PDB but is owned by another project. This demonstrates the rule:
 
@@ -304,7 +322,7 @@ Projects / environments
         ↓
 Clusters / nodes / CDBs
         ↓
-PDBs and project mappings
+PDB occurrences and project mappings
         ↓
 Accounts and ownership
         ↓
@@ -319,7 +337,7 @@ The following are not required to prove the V1 model and should not be invented 
 
 - dedicated performance infrastructure without a stated requirement
 - a separate CDB prefix for every PDB environment
-- a CDB name that encodes PRIMARY or STANDBY
+- a database name that encodes PRIMARY or STANDBY
 - a permanent "DR CDB" identity for a database that may become primary
 - dedicated physical Exadata hardware for every non-production CDB
 - unnecessary one-to-one mapping between applications and CDBs
