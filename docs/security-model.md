@@ -46,7 +46,7 @@ Expected responsibilities:
 - owns no base estate tables;
 - does not receive broad owner-like privileges;
 - is used to prove that the application can operate through the intended least-privilege boundary;
-- may receive synonyms or narrowly scoped direct grants where they materially improve application usability.
+- may receive private synonyms or narrowly scoped direct grants where they materially improve application usability.
 
 ## Access Flow
 
@@ -56,11 +56,11 @@ APEX / runtime
      v
  APPESTATE
      |
- explicit grants
+ READ on approved app-facing views
      v
  ESTATE_AO
      |
- explicit grants
+ READ WITH GRANT OPTION on required base objects
      v
    ESTATE
 ```
@@ -76,29 +76,37 @@ The application should not be made functional by granting broad privileges to `A
 3. **Direct grants are explicit.** Avoid blanket role grants that obscure which objects the application requires.
 4. **Business logic has a home.** Base data integrity belongs with `ESTATE`; application-facing transformations belong with `ESTATE_AO` unless a concrete design reason says otherwise.
 5. **Security failures are design feedback.** If APEX cannot perform an action, first determine the missing privilege and intended ownership boundary rather than bypassing the model.
-6. **No production identities.** Schema names, passwords, grants, and examples in this repository are fictional and must not be copied from an employer environment.
+6. **Read-only means read-only.** Prefer Oracle `READ` over `SELECT` for read-only interfaces when `SELECT ... FOR UPDATE` is not required.
+7. **No production identities.** Schema names, passwords, grants, and examples in this repository are fictional and must not be copied from an employer environment.
 
-## Initial Privilege Intent
+## V1 Privilege Model
 
-The exact DDL is deferred until the logical model is approved, but V1 should begin from this intent:
+V1 uses this explicit privilege chain:
 
 ```text
 ESTATE
   owns base objects
-  grants SELECT / required DML to ESTATE_AO only where needed
+  grants READ WITH GRANT OPTION to ESTATE_AO on objects required by app-facing views
 
 ESTATE_AO
   owns app-facing views and related objects
-  grants SELECT / required EXECUTE or DML to APPESTATE only where needed
+  grants READ on approved views to APPESTATE
 
 APPESTATE
   CREATE SESSION
+  READ only on approved ESTATE_AO views
+  no direct ESTATE table access
   no CREATE TABLE
-  no ALTER ANY ...
   no broad DBA-style roles
 ```
 
-Where Oracle object semantics require direct access from `APPESTATE` to an `ESTATE` object, that exception should be explicit and documented rather than hidden behind broad privileges.
+The `WITH GRANT OPTION` on the `ESTATE` to `ESTATE_AO` layer is intentional. Cross-schema consumers such as APEX, parsing as `APPESTATE`, must be able to query `ESTATE_AO` views whose definitions depend on `ESTATE` base objects. The App Objects owner therefore needs grantable direct object privileges on those base objects.
+
+This does **not** grant `APPESTATE` direct access to `ESTATE`. `APPESTATE` remains constrained to the curated `ESTATE_AO` interface.
+
+Private synonyms may be created in `APPESTATE` to provide stable application-facing names. They can also support versioned view deployment by allowing the synonym target to be repointed without changing the object name consumed by APEX.
+
+For future write operations, prefer `EXECUTE` on controlled PL/SQL package interfaces rather than direct `INSERT`, `UPDATE`, or `DELETE` grants on base tables. Direct DML should be introduced only for a documented use case.
 
 ## Validation Targets
 
@@ -106,7 +114,9 @@ V1 security validation should prove at minimum:
 
 - `ESTATE` owns all base estate tables;
 - `ESTATE_AO` owns application-facing views;
-- `APPESTATE` can query the objects required by APEX;
+- required `ESTATE` base-object grants to `ESTATE_AO` are `READ` and grantable;
+- `APPESTATE` has `READ` only on the approved `ESTATE_AO` views;
+- `APPESTATE` has no direct `ESTATE` table privileges;
 - `APPESTATE` cannot create tables;
 - `APPESTATE` cannot alter or drop objects owned by `ESTATE` or `ESTATE_AO`;
 - APEX runs successfully with `APPESTATE` as its parsing schema;
