@@ -81,12 +81,43 @@ select owner, table_name, privilege
 
 prompt Expected: no rows.
 
+prompt === ESTATE_AO base-object grants ===
+select owner, table_name, privilege, grantable
+  from dba_tab_privs
+ where grantee = 'ESTATE_AO'
+   and owner = 'ESTATE'
+ order by table_name, privilege;
+
+prompt Expected: 16 READ grants, each with GRANTABLE=YES.
+
+prompt === ESTATE_AO base-object grant violations ===
+select owner, table_name, privilege, grantable
+  from dba_tab_privs
+ where grantee = 'ESTATE_AO'
+   and owner = 'ESTATE'
+   and (privilege <> 'READ' or grantable <> 'YES')
+ order by table_name, privilege;
+
+prompt Expected: no rows.
+
 prompt === APPESTATE ESTATE_AO grants ===
 select owner, table_name, privilege
   from dba_tab_privs
  where grantee = 'APPESTATE'
    and owner = 'ESTATE_AO'
  order by table_name, privilege;
+
+prompt Expected: READ on the 8 approved ESTATE_AO views only.
+
+prompt === APPESTATE ESTATE_AO grant violations ===
+select owner, table_name, privilege
+  from dba_tab_privs
+ where grantee = 'APPESTATE'
+   and owner = 'ESTATE_AO'
+   and privilege <> 'READ'
+ order by table_name, privilege;
+
+prompt Expected: no rows.
 
 prompt === Service compliance anomalies ===
 select db_unique_name,

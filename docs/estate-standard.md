@@ -52,6 +52,20 @@ Surrogate relational keys should use Oracle identity columns where the value has
 
 Human-entered identifiers that carry operational meaning should remain explicit attributes and use uniqueness constraints where appropriate.
 
+### Application Access and Privileges
+
+Application runtime schemas should receive only the privileges required by the application interface.
+
+For read-only application-facing views, prefer Oracle `READ` object privileges over `SELECT` when the application does not require operations such as `SELECT ... FOR UPDATE`. This makes the intended read-only contract explicit and reduces unnecessary locking capability.
+
+The APEX parsing schema should consume curated objects from the application-object layer rather than receive broad direct privileges on base estate tables.
+
+For cross-schema view chains, the application-object owner must receive the required base-object `READ` privileges directly and with `GRANT OPTION` when downstream runtime schemas must query those views. The runtime schema should still receive only `READ` on the approved application-facing views, not direct access to the base tables.
+
+Where application pages must change estate data, prefer controlled PL/SQL package interfaces with `EXECUTE` grants over direct `INSERT`, `UPDATE`, or `DELETE` grants on base tables. Direct DML grants should be used only when there is a clear design reason.
+
+Private synonyms in the application parsing schema may provide stable application-facing object names while implementation objects remain owned by the application-object schema. This also allows an implementation view to be versioned or replaced while preserving the name consumed by the application.
+
 ### High Availability and DR
 
 Production CDBs must have a documented availability model.
