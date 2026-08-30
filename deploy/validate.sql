@@ -88,4 +88,68 @@ select owner, table_name, privilege
    and owner = 'ESTATE_AO'
  order by table_name, privilege;
 
+prompt === Service compliance anomalies ===
+select db_unique_name,
+       pdb_name,
+       service_name,
+       instance_name,
+       expected_flag,
+       observed_flag,
+       compliance_status
+  from ESTATE_AO.v_service_compliance
+ where compliance_status = 'MISMATCH'
+ order by db_unique_name, pdb_name, service_name, instance_name;
+
+prompt Expected: two rows for HR_REPORTING_TST on NHR002E/T001.
+
+prompt === Deferred patch schedules ===
+select db_unique_name,
+       patch_group_name,
+       target_ru,
+       scheduled_date,
+       status
+  from ESTATE_AO.v_patch_readiness
+ where status = 'DEFERRED'
+ order by db_unique_name;
+
+prompt Expected: one row for NHR003E in patch group 2026-Q3-RU.
+
+prompt === Data Guard non-healthy state ===
+select primary_db_unique_name,
+       standby_db_unique_name,
+       protection_mode,
+       transport_status,
+       apply_status
+  from ESTATE_AO.v_dr_status
+ where transport_status <> 'VALID'
+    or apply_status <> 'APPLYING'
+ order by primary_db_unique_name;
+
+prompt Expected: one row for NHR003E -> NHR003W with APPLY_STATUS=LAGGING.
+
+prompt === Active standards exceptions ===
+select db_unique_name,
+       target_name,
+       target_type,
+       exception_type,
+       approved_by,
+       review_date
+  from ESTATE_AO.v_active_exceptions
+ order by db_unique_name, target_name;
+
+prompt Expected: one active NAMING_STANDARD exception for NHR002E/T003.
+
+prompt === Cross-project account ownership ===
+select db_unique_name,
+       pdb_name,
+       account_name,
+       account_type,
+       project_code,
+       application_name,
+       primary_flag
+  from ESTATE_AO.v_account_ownership
+ where account_name = 'FIN_RPT_INTEGRATION';
+
+prompt Expected: NHR002E/T001 owned by project 004 Finance Analytics.
+
 prompt === Validation complete ===
