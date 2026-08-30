@@ -1,5 +1,11 @@
 whenever sqlerror exit sql.sqlcode rollback
 
+-- Deployment context:
+--   This component script creates unqualified objects in CURRENT_SCHEMA.
+--   Normal deployment is through deploy/install.sql, which sets
+--   CURRENT_SCHEMA = ESTATE_AO before invoking this file.
+--   If run directly for maintenance, set CURRENT_SCHEMA to ESTATE_AO first.
+
 -- Main inventory: one row per PDB occurrence on a DB_UNIQUE_NAME.
 -- A mirrored PDB therefore appears once for each physical Data Guard peer.
 -- Present the business/application identity first, then the Oracle hosting detail.
@@ -125,7 +131,11 @@ select p.cdb_name,
   join ESTATE.cdb s on s.cdb_id = dr.standby_cdb_id;
 
 create or replace view v_active_exceptions as
-select coalesce(p.pdb_name, c.db_unique_name) target_name,
+select case
+           when x.pdb_id is not null then pc.db_unique_name
+           when x.cdb_id is not null then c.db_unique_name
+       end db_unique_name,
+       coalesce(p.pdb_name, c.db_unique_name) target_name,
        case when x.pdb_id is not null then 'PDB'
             when x.cdb_id is not null then 'CDB'
             else 'ESTATE'
@@ -137,5 +147,6 @@ select coalesce(p.pdb_name, c.db_unique_name) target_name,
        x.review_date
   from ESTATE.standard_exception x
   left join ESTATE.pdb p on p.pdb_id = x.pdb_id
+  left join ESTATE.cdb pc on pc.cdb_id = p.cdb_id
   left join ESTATE.cdb c on c.cdb_id = x.cdb_id
  where x.active_flag = 'Y';
