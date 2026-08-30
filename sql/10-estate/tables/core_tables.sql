@@ -50,7 +50,6 @@ create table cdb (
     oracle_version      varchar2(30),
     description         varchar2(500),
     active_flag         char(1) default 'Y' not null,
-    constraint uk_cdb_name unique (cdb_name),
     constraint uk_cdb_unique_name unique (db_unique_name),
     constraint fk_cdb_cluster foreign key (cluster_id) references db_cluster(cluster_id),
     constraint ck_cdb_architecture check (architecture_type in ('SINGLE','RAC')),
