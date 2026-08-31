@@ -2,145 +2,192 @@
 
 ## Purpose
 
-Deploy the V1 Oracle Estate Operations lab from a clean host state to a validated Oracle database, APEX/ORDS endpoint, fictional estate schema, and initial operations portal.
+Build a disposable Oracle Estate Operations lab from a clean Linux host, deploy the fictional estate, and verify that the database layer is working as documented.
 
-This runbook orchestrates the deployment. Reusable actions belong in `docs/runbooks/procedures/` and should be followed from there rather than duplicated here.
+The lab does not depend on my workstation or home-server layout. Windows, macOS, or Linux is fine for the operator workstation. The lab host just needs to meet the requirements below.
+
+## What this runbook assumes
+
+This is written for a DBA or infrastructure engineer who is comfortable following a technical runbook and using a command line, but may not spend much time building Linux or container infrastructure.
+
+I am not going to reproduce general Linux, Git, Docker, or virtualization documentation here. Use the current documentation for those tools when you need it. Once the host meets the prerequisites, this runbook takes over.
+
+## Recommended lab layout
+
+Ubuntu Server LTS is the recommended lab host because it is common, well documented, and easy to reproduce. A VM is sufficient. The VM can run on VirtualBox, VMware, Hyper-V, or another hypervisor that works for your workstation.
+
+A physical Linux host is also fine. Nothing in the project requires a particular hypervisor or a particular operator OS.
+
+```text
+Operator workstation
+Windows / macOS / Linux
+        |
+        | Git / SSH / SQLcl / Browser
+        v
+Ubuntu Server LTS
+        |
+        +-- Docker
+        |
+        +-- Oracle Free container
+              +-- Oracle Database
+              +-- ORDS / APEX
+                    |
+                    v
+          Oracle Estate Operations
+```
+
+Treat the lab host as disposable. The repository and documented procedure are the authoritative parts. If the VM becomes a collection of undocumented fixes, rebuilding it is usually the better answer.
+
+## Prerequisites
+
+### Operator workstation
+
+You need:
+
+- Git;
+- an SSH client;
+- SQLcl or another Oracle command-line client capable of running the supplied SQL scripts;
+- a web browser for APEX;
+- an editor or IDE of your choice.
+
+VS Code works well, but it is not required.
+
+### Lab host
+
+You need:
+
+- a supported Linux host, with Ubuntu Server LTS recommended;
+- Docker Engine installed and working;
+- enough CPU, memory, and storage for the Oracle Free container;
+- network connectivity from the operator workstation to the database and APEX/ORDS endpoints;
+- a dedicated writable directory for the lab.
+
+Use the current Docker and Oracle container documentation when sizing a new VM. Give Oracle enough room to run normally rather than tuning a first deployment to the smallest possible footprint.
+
+Before continuing, verify Docker independently. A broken Docker installation is a host problem, not an Oracle Estate Operations problem.
+
+**PASS:** You can connect to the lab host, Docker runs successfully, and the operator workstation can reach the host.
+
+**STOP:** Fix the host, Docker, or network path before continuing.
 
 ## Scope
 
 This runbook covers:
 
-- Oracle lab deployment;
-- schema deployment;
-- fictional seed data;
-- operational/compliance views;
-- APEX workspace/application setup;
-- initial validation.
+- deploying the Oracle Free container used by the lab;
+- deploying the three estate schemas;
+- loading the fictional reference topology and operational scenarios;
+- creating the operational views used by validation and APEX;
+- validating the database layer;
+- confirming the APEX/ORDS endpoint used by the lab.
 
-It does not cover production hardening, enterprise authentication, CI/CD, Terraform, Ansible, or live OEM integration.
+V1 includes an APEX Estate Overview built over `ESTATE_AO.V_ESTATE_STATUS`. The database objects and SQL validation are reproducible from this repository. The APEX application itself is currently a small UI layer and is not treated as the source of operational logic.
 
-## Operator Guardrails
+This runbook does not cover production hardening, enterprise authentication, CI/CD, Terraform, Ansible, live OEM integration, or general virtualization administration.
+
+## Operator guardrails
 
 - Treat the lab as disposable.
 - Do not use employer data, code, hostnames, credentials, or application names.
 - Do not place secrets in Git.
+- Read a command before running it.
 - Stop when a validation gate fails. Do not continue hoping a later step repairs an earlier problem.
-- Prefer the documented procedure over ad hoc corrective steps. If the procedure is wrong, fix the procedure.
+- Prefer the documented procedure over an ad hoc fix. If the procedure is wrong, fix the procedure.
 
-## Related Procedures
+## 1. Choose the lab location
 
-Procedures will be added as implementation begins:
+Choose a dedicated writable directory on the Linux host. An ordinary Linux filesystem is fine. The project does not require ZFS or any other specific storage layout.
 
-- Oracle container deployment
-- schema deployment
-- sample data load
-- APEX workspace setup
-- APEX application import/build
-- lab validation
+Keep the lab separate from directories used by existing applications or production-like services.
 
-## 1. Prepare Lab Location
+**PASS:** The lab has its own writable location with sufficient free space and no dependency on an unrelated application.
 
-Confirm the target host and storage location are appropriate for disposable lab workloads.
+**STOP:** Choose another location if the proposed path would mix the lab with existing service configuration or data.
 
-**PASS:** A dedicated writable lab path is available with sufficient storage and no dependency on production services.
+## 2. Deploy Oracle Free
 
-**STOP:** The proposed path contains production/service configuration or would create a dependency on an existing application.
+Follow [Oracle Container Deployment](procedures/oracle-container-deploy.md).
 
-## 2. Deploy Oracle Database and ORDS/APEX
+That procedure covers the container deployment, persistent lab storage, required ports, and the checks used to determine whether the database and ORDS/APEX endpoint are healthy.
 
-Follow the Oracle deployment procedure once created.
+Do not continue merely because the container exists. Complete the validation in the procedure first.
 
-**PASS:** Database is open and accepting connections; ORDS/APEX endpoint responds successfully.
+**PASS:** Oracle is open and accepting connections, the expected listener is available, and the ORDS/APEX endpoint responds.
 
-**STOP:** Database is not healthy, required ports are unavailable, or the APEX/ORDS endpoint cannot be reached.
+**STOP:** Resolve the container, database, listener, or endpoint failure before deploying the estate schemas.
 
-## 3. Deploy Estate Schema
+## 3. Deploy Oracle Estate Operations
 
-Follow the schema deployment procedure.
+From the cloned repository, connect with SQLcl as an administrative database account and run:
 
-The deployment must create the V1 metadata model without employer-specific objects or naming.
+```sql
+@deploy/install.sql
+```
 
-**PASS:** Required schema objects compile successfully and validation reports no invalid required objects.
+The installer prompts for the `ESTATE`, `ESTATE_AO`, and `APPESTATE` passwords. Passwords are not stored in the repository.
 
-**STOP:** DDL fails, required objects are invalid, or deployment requires undocumented manual changes.
+The install creates the schema boundary, base model, application-facing views, grants, fictional topology, and operational scenarios.
 
-## 4. Load Fictional Estate Data
+For the schema-specific procedure and expected deployment behavior, see [Database Schema Deployment](../deploy-database-schema.md).
 
-Follow the sample-data procedure.
+**PASS:** The install completes without unexplained SQL errors.
 
-Seed data should represent approximately 20 fictional databases and include the documented standards exception.
+**STOP:** Do not manually create missing objects to get past a failed install. Identify the failed deployment step, correct the script or prerequisite responsible, and run the documented deployment again.
 
-**PASS:** Expected row counts are present and referential-integrity checks pass.
+## 4. Validate the database layer
 
-**STOP:** Seed data contains real environment information, unresolved constraint failures, or inconsistent relationships.
+Run:
 
-## 5. Deploy Operational and Compliance Views
+```sql
+@deploy/validate.sql
+```
 
-Deploy the V1 views used by both APEX and CLI validation.
+Validation checks the implemented model rather than simply checking that tables exist. It covers the schema boundary, inventory grain, service placement, patch readiness, Data Guard state, active exceptions, and the intentional seed scenarios.
 
-**PASS:** Views compile and return expected fictional estate state, including at least one compliant result and one intentional exception.
+The fictional estate contains 40 PDB occurrences across seven physical CDB occurrences, four RAC clusters, five projects, and three Data Guard relationships. It also contains a small number of deliberately unhealthy or non-standard conditions so the operational views have something useful to report.
 
-**STOP:** APEX-specific logic must be duplicated to make the views useful, or core compliance logic exists only in presentation code.
+See [Seed Data Design](../seed-data-design.md) for the topology and the reason each intentional condition exists.
 
-## 6. Configure APEX Workspace
+**PASS:** Structural checks succeed and the documented operational exceptions appear where expected.
 
-Follow the APEX workspace setup procedure.
+**STOP:** An unexplained invalid object, missing relationship, privilege failure, or unexpected operational result is a deployment failure. Resolve it before treating the lab as complete.
 
-**PASS:** Workspace authentication succeeds and the estate schema is assigned to the workspace.
+## 5. Confirm the APEX layer
 
-**STOP:** Workspace cannot authenticate or the application schema is unavailable.
+Confirm that the ORDS/APEX endpoint is reachable from the operator workstation.
 
-## 7. Build or Import V1 APEX Application
+The current V1 UI is the **Estate Overview**, a faceted search over `ESTATE_AO.V_ESTATE_STATUS`. It presents the same PDB-grain inventory used by the database layer rather than maintaining a second set of joins and operating rules inside APEX.
 
-Create/import the initial pages:
+The screenshots in the [README](../../README.md#estate-overview) show the expected V1 interface.
 
-1. Estate Overview
-2. Database Detail
-3. Service Compliance
-4. Patch Schedule
+**PASS:** The endpoint is reachable and the Estate Overview displays the fictional estate from the shared operational view.
 
-**PASS:** Each page loads and displays data from the shared Oracle views.
+**STOP:** Do not solve an APEX access problem by granting broad access to the `ESTATE` base tables. Use the documented [Security Model](../security-model.md) to identify the missing runtime privilege or ownership boundary.
 
-**STOP:** Pages require hard-coded production-like values, expose credentials, or duplicate core estate rules in page logic.
+## Failure handling
 
-## 8. Run Lab Validation
-
-Follow the lab validation procedure.
-
-Validation should confirm at minimum:
-
-- expected schema objects exist;
-- required views are valid;
-- fictional estate row counts are plausible;
-- service compliance identifies expected state and intentional exceptions;
-- APEX endpoint is reachable;
-- no obvious secret or employer-specific strings are present in tracked project files.
-
-**PASS:** All required checks pass or only documented intentional exceptions remain.
-
-**STOP:** Any unexplained validation failure remains.
-
-## Failure Handling
-
-If a step fails:
+When a step fails:
 
 1. stop at the failed gate;
-2. capture the command/output or UI condition;
-3. correct the reusable procedure or implementation artifact responsible for the failure;
-4. repeat the failed procedure;
-5. resume this runbook only after the PASS condition is met.
+2. capture the command output or UI condition;
+3. decide whether the problem belongs to the host, a prerequisite, or this repository;
+4. correct the responsible procedure or implementation artifact when the problem is ours;
+5. repeat the failed step;
+6. continue only after its PASS condition is met.
 
-Do not add one-off recovery commands to this orchestration runbook when they belong in a reusable procedure.
+Do not turn a successful one-off recovery command into undocumented required knowledge. If another operator would need it, it belongs in the procedure.
 
-## Completion Criteria
+## Completion criteria
 
-The V1 deployment is complete when:
+The lab is ready when:
 
-- Oracle database is healthy;
+- Oracle is healthy and accepting connections;
 - ORDS/APEX is reachable;
-- fictional estate schema and seed data are deployed;
-- operational/compliance views are valid;
-- the four initial APEX pages are functional;
-- CLI validation produces understandable output;
-- the documented standards exception is visible rather than silently ignored;
-- a second operator could reproduce the deployment using repository documentation without relying on undocumented knowledge.
+- the three-schema security boundary is deployed;
+- the fictional estate and operational scenarios are loaded;
+- `deploy/validate.sql` completes with the expected results;
+- the documented intentional exceptions are visible rather than silently ignored;
+- the Estate Overview can read the shared operational view through the documented runtime boundary;
+- another qualified operator could rebuild the lab without knowing how the original host was configured.
+
+At that point, the VM or host is replaceable. That is intentional.
