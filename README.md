@@ -24,9 +24,24 @@ The current V1 database foundation includes:
 - curated operational views for estate status, topology, ownership, service placement, patch readiness, DR status, and active exceptions;
 - fictional seed data with intentionally unhealthy or non-standard states so validation produces useful output instead of an unrealistically perfect estate;
 - SQLcl installation and validation scripts;
+- an Oracle APEX Estate Overview built as a faceted search over the curated `ESTATE_AO.V_ESTATE_STATUS` view;
 - documentation for architecture, standards, security, data modeling, seed-data design, and repeatable operating procedures.
 
-An Oracle APEX operations application is being built on top of the same curated views. The application export and screenshots will be added to the repository before the V1 public release.
+The current APEX application is intentionally small. Its purpose is to make the operational model useful to a human operator without moving the underlying rules into the UI.
+
+## Estate Overview
+
+The Estate Overview presents the fictional estate at PDB grain. It is backed directly by the curated `ESTATE_AO.V_ESTATE_STATUS` view, so the same database logic can be reused by other interfaces without maintaining a separate set of reporting rules in APEX.
+
+![Oracle Estate Operations Estate Overview](docs/images/estate-overview.png)
+
+*Estate Overview: PDB-grain operational inventory with facets for application, environment, database identity, role, ownership, and other support attributes.*
+
+The facets let an operator narrow the same inventory to the part of the estate relevant to the question being asked. For example, filtering to production exposes application ownership and primary/standby placement while preserving the same inventory model.
+
+![Oracle Estate Operations production inventory](docs/images/estate-overview-prod.png)
+
+*Production inventory: the same curated operational view filtered to PROD, showing application ownership and primary/standby placement without separate reporting logic in APEX.*
 
 ## Architecture at a glance
 
@@ -118,6 +133,7 @@ docs/
   estate-standard.md      default operating standards and exceptions
   security-model.md       schema ownership and privilege model
   seed-data-design.md     fictional topology and test scenarios
+  images/                 APEX screenshots used in project documentation
   runbooks/               operator-focused deployment and procedures
 
 sql/
