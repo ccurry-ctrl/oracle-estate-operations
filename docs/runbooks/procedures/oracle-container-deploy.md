@@ -1,264 +1,195 @@
 # Procedure: Deploy Oracle Autonomous AI Database Free Container
 
 ## Purpose
+
 Deploy the Oracle Autonomous AI Database Free container used as the management repository and APEX/ORDS platform for this project.
 
-## Scope
-This procedure documents the supported runtime path for the project: **Ubuntu Linux with Docker**.
+This procedure stops when Oracle is healthy and reachable. Project schema installation and validation are separate steps.
 
-The Oracle host is the **runtime plane**. It provides the container runtime, persistent storage, network access, and host resources required to run the lab database.
+## Supported path
 
-Source control and database deployment tooling belong on the **operator workstation/control plane**. The runtime host does not require Git, SQLcl, VS Code, a project repository clone, or database wallets used by the operator workstation.
+The documented reference path is:
 
-Other Linux distributions or container runtimes may work, but they are outside the documented path. Hostname, IP address, filesystem location, port mappings, DNS, and optional ingress remain environment-specific choices.
+- Ubuntu Server LTS;
+- Docker Engine;
+- Oracle Autonomous AI Database Free 26ai;
+- an operator workstation with SQLcl and a browser.
 
-This container represents the **management repository**, not one of the fictional Oracle database targets modeled by the project.
+The Ubuntu host may be a VM or physical system. The project does not depend on a particular hypervisor.
 
-## Operator Guardrails
-- Do not store passwords, wallets, certificates, or generated runtime data in Git.
-- Do not use production or employer-derived hostnames, SIDs, schema names, credentials, code, or data.
-- Keep persistent runtime state separate from source-controlled project files.
-- The runtime host does not require a clone of this repository.
-- Prefer a disposable lab filesystem for host-side runtime support files.
-- Stop if the host cannot provide the required memory, CPU, FUSE device access, container capabilities, or persistent storage.
-- Do not expose the container directly to the public Internet.
-
-## Responsibility Boundary
-
-### Operator workstation / control plane
-The operator workstation is responsible for:
-
-- Git and repository management
-- VS Code or another editor
-- SQLcl or another approved Oracle client
-- database wallets and client connection configuration
-- running project schema deployment and validation scripts
-- reviewing and committing source changes
-
-### Oracle runtime host
-The runtime host is responsible for:
-
-- Ubuntu Linux
-- Docker Engine
-- Oracle ADB Free container execution
-- Docker-managed persistent database storage
-- local secret file used to initialize/start the container
-- required FUSE and container capabilities
-- network reachability for database and HTTPS endpoints
-
-Keeping this boundary explicit prevents development tooling from becoming an unnecessary dependency of the Oracle host.
-
-## Supported Reference Platform
-The documented runtime path assumes:
-
-- Ubuntu Linux
-- Docker Engine
-- operator access sufficient to run Docker and create the selected runtime directory
-- sufficient host memory and CPU
-- `/dev/fuse` access
-
-Validated project image:
+The runtime host does **not** need Git, SQLcl, VS Code, or the project repository. Those belong on the operator workstation.
 
 ```text
-ghcr.io/oracle/adb-free:latest-26ai
+Operator workstation
+Git / SQLcl / browser
+        |
+        v
+Ubuntu Server LTS
+        |
+        v
+Docker
+        |
+        v
+Oracle ADB Free
+Database + ORDS/APEX
 ```
 
-Oracle Autonomous AI Database Free includes:
+Other Linux distributions may work, but Ubuntu Server LTS is the path documented and tested here.
 
-- Oracle APEX
-- ORDS
-- Database Actions
-- optional Mongo-compatible API
-- database connectivity on container port `1522`
-- HTTPS for ORDS/APEX on container port `8443`
-- a runtime requirement for `SYS_ADMIN` capability and `/dev/fuse` access
+## Guardrails
 
-The validated reference deployment uses an 8 GiB Docker memory ceiling. Host capacity must be evaluated independently before starting the container.
+- Do not store passwords, wallets, certificates, or generated runtime data in Git.
+- Do not use employer-derived hostnames, credentials, code, names, or data.
+- Keep runtime state separate from source-controlled project files.
+- Do not expose the container directly to the public Internet.
+- Stop if required CPU, memory, storage, FUSE access, or container capabilities are unavailable.
+- Treat the host as disposable. Do not turn it into a special system that can only be rebuilt from memory.
 
-## Deployment Variables
-Choose values appropriate for the target environment before running the procedure.
+## Reference values
+
+The project was validated with:
 
 ```text
+IMAGE=ghcr.io/oracle/adb-free:latest-26ai
 CONTAINER_NAME=oracle-estate-adb
 WORKLOAD_TYPE=ATP
 HOST_HTTPS_PORT=8443
 HOST_DB_PORT=1521
-LAB_HOST=<hostname-or-ip>
-LAB_ROOT=/path/to/runtime/oracle-estate-operations
-IMAGE=ghcr.io/oracle/adb-free:latest-26ai
 VOLUME_NAME=oracle-estate-adb-data
 ```
 
-The values are implementation choices, not project naming requirements. A second operator should be able to select an appropriate hostname and filesystem path without knowledge of the original development lab.
+`latest-26ai` is a convenient lab tag, not an immutable artifact. Oracle may update what that tag points to. Record the image actually used when repeatability across time matters.
 
-## Related Procedures and Project Artifacts
-- [Lab Deployment](../lab-deployment.md)
-- [Database Schema Deployment](../deploy-database-schema.md)
-- [Seed Data Design](../../seed-data-design.md)
+The validated deployment uses an 8 GiB Docker memory ceiling. The host still needs enough additional memory for Ubuntu and normal operation.
 
-The container procedure stops at a healthy, reachable Oracle platform. Schema creation, project validation, seed loading, and application deployment are separate concerns and should remain separate procedures or implementation steps.
+The container requires:
 
-## 1. Verify Host Prerequisites
+- `/dev/fuse`;
+- `SYS_ADMIN` capability;
+- persistent storage for `/u01/data`;
+- container port `1522` for database connectivity;
+- container port `8443` for ORDS/APEX.
 
-Confirm Ubuntu:
+## 1. Verify the host
+
+Confirm Ubuntu and Docker:
 
 ```bash
 cat /etc/os-release
-```
-
-Confirm Docker is installed and usable:
-
-```bash
 docker --version
 docker info >/dev/null
 ```
 
-Confirm available memory and CPU:
+Confirm available resources and FUSE:
 
 ```bash
 free -h
 nproc
-```
-
-Confirm FUSE is available:
-
-```bash
 ls -l /dev/fuse
 ```
 
-Confirm the selected host ports are not already listening:
+Check the example host ports before using them:
 
 ```bash
 ss -lnt | grep -E ':8443|:1521' || true
 ```
 
-### PASS
-- Host is Ubuntu Linux.
-- Docker responds successfully.
-- Host has sufficient resources for the lab.
-- `/dev/fuse` exists and is accessible.
-- Selected ports are available or intentionally remapped.
+**PASS:** Ubuntu is available, Docker works, `/dev/fuse` exists, the host has reasonable capacity, and the selected ports are available or intentionally remapped.
 
-### STOP
-Do not continue if Docker, required resources, FUSE access, or port assignments are unresolved.
+**STOP:** Resolve the host or Docker problem before continuing. A broken Docker installation is not an Oracle Estate Operations deployment problem.
 
-## 2. Create Runtime and Secret Storage
+## 2. Create runtime secret storage
 
-Create host-side runtime support paths:
+Choose a runtime path outside the Git working tree:
 
 ```bash
-export LAB_ROOT=/path/to/runtime/oracle-estate-operations
-mkdir -p "${LAB_ROOT}/secrets"
+export LAB_ROOT=/opt/oracle-estate-lab
+sudo mkdir -p "${LAB_ROOT}/secrets"
+sudo chown "$(id -u):$(id -g)" "${LAB_ROOT}" "${LAB_ROOT}/secrets"
 chmod 700 "${LAB_ROOT}/secrets"
 ```
 
-The runtime host does not need a Git working tree. Treat `${LAB_ROOT}` as runtime support storage, not as a source checkout.
+The exact path is not important. The separation from source control is.
 
-Persistent Oracle database files will be stored in the Docker-managed volume created later in this procedure.
-
-### PASS
-Runtime support and secret storage exist independently of source control.
-
-### STOP
-Do not continue if credentials or generated runtime state would be stored in tracked project files.
-
-## 3. Obtain the Oracle Container Image
-
-```bash
-export IMAGE=ghcr.io/oracle/adb-free:latest-26ai
-docker pull "${IMAGE}"
-```
-
-Verify:
-
-```bash
-docker images | grep adb-free
-```
-
-### PASS
-The `latest-26ai` image is present locally.
-
-### STOP
-Do not continue if the image pull fails or the image source is unclear.
-
-## 4. Prepare Credentials
-
-Create a local runtime env file such as:
+Create:
 
 ```text
-/path/to/runtime/oracle-estate-operations/secrets/adb.env
+${LAB_ROOT}/secrets/adb.env
 ```
 
-Example structure:
+with:
 
 ```text
 ADMIN_PASSWORD=<strong-password>
 WALLET_PASSWORD=<strong-password>
 ```
 
-Do not commit or copy this file into the project repository.
-
-The `ADMIN_PASSWORD` must satisfy Oracle's policy:
-
-- 12 to 30 characters
-- at least one uppercase letter
-- at least one lowercase letter
-- at least one number
-- must not contain the username `ADMIN`
-
-Lock down the file:
+Protect it:
 
 ```bash
 chmod 600 "${LAB_ROOT}/secrets/adb.env"
 ```
 
-### PASS
-Credentials meet Oracle policy and are available to Docker without being stored in source control.
+Oracle requires the ADMIN password to meet its current password policy. Use Oracle's current container documentation if that policy changes.
 
-### STOP
-Do not continue if credential validation is uncertain or secrets would be stored in tracked files.
+**PASS:** Secrets are available to Docker and remain outside source control.
 
-## 5. Create and Prepare Persistent Volume
+**STOP:** Do not continue if credentials would be stored in the repository.
 
-Create a Docker-managed volume:
+## 3. Pull the Oracle image
+
+```bash
+export IMAGE=ghcr.io/oracle/adb-free:latest-26ai
+docker pull "${IMAGE}"
+```
+
+Confirm it is present:
+
+```bash
+docker images | grep adb-free
+```
+
+**PASS:** The image is present locally.
+
+**STOP:** Do not continue if the image pull failed or the image source is unclear.
+
+## 4. Prepare persistent storage
+
+Create a Docker volume:
 
 ```bash
 export VOLUME_NAME=oracle-estate-adb-data
 docker volume create "${VOLUME_NAME}"
 ```
 
-The validated 26ai image runs as:
-
-```text
-uid=1001(oracle)
-gid=1001(oinstall)
-```
-
-Confirm if needed:
+The validated 26ai image runs as UID/GID `1001:1001`. Confirm the image identity if needed:
 
 ```bash
 docker run --rm --entrypoint id "${IMAGE}"
 ```
 
-A newly created local Docker volume may be owned by `root:root`, which prevents the `oracle` user from writing `/u01/data`. Prepare the volume ownership using numeric IDs:
+Prepare the volume for the Oracle user:
 
 ```bash
 VOLUME_PATH=$(docker volume inspect "${VOLUME_NAME}" --format '{{ .Mountpoint }}')
-chown -R 1001:1001 "${VOLUME_PATH}"
+sudo chown -R 1001:1001 "${VOLUME_PATH}"
 ls -ld "${VOLUME_PATH}"
 ```
 
-Use numeric UID/GID values rather than host account names because the host may resolve GID `1001` to a different local group name.
+Use numeric IDs. Host account and group names do not need to match the container.
 
-### PASS
-The Docker volume exists and its data directory is owned by UID/GID `1001:1001`.
+**PASS:** The volume exists and is writable by the Oracle container user.
 
-### STOP
-Do not continue if `/u01/data` would not be writable by the image's `oracle` user.
+**STOP:** Do not continue if `/u01/data` will not be writable.
 
-## 6. Start the Container
+## 5. Start the container
 
 ```bash
+export CONTAINER_NAME=oracle-estate-adb
+export WORKLOAD_TYPE=ATP
+export HOST_DB_PORT=1521
+export HOST_HTTPS_PORT=8443
+
 docker run -d \
   --name "${CONTAINER_NAME}" \
   --memory=8g \
@@ -272,157 +203,74 @@ docker run -d \
   "${IMAGE}"
 ```
 
-Notes:
+The image also supports other interfaces, including a Mongo-compatible API. V1 does not use them, so do not expose extra ports without a reason.
 
-- Oracle also provides a Mongo-compatible API on port `27017`. It is not required for project V1 and should remain unexposed unless a later requirement justifies it.
-- Host port values are examples and may be remapped.
-- This documented `docker run` path is the validated baseline. A later Compose implementation should reproduce the same requirements rather than replace them with different assumptions.
+## 6. Wait for Oracle readiness
 
-## 7. Verify Container State
-
-Check the container:
+Check state and logs:
 
 ```bash
 docker ps --filter "name=${CONTAINER_NAME}"
-```
-
-Review startup logs:
-
-```bash
 docker logs --tail 100 "${CONTAINER_NAME}"
-```
-
-Monitor resource usage:
-
-```bash
 docker stats --no-stream "${CONTAINER_NAME}"
-free -h
 ```
 
-Do not treat `running` alone as readiness. First initialization may take several minutes while Oracle unpacks database files, generates wallets/certificates, initializes the database, and starts ORDS.
+`running` is not the same as ready. First initialization can take several minutes while Oracle initializes the database, wallets, certificates, and ORDS.
 
-### PASS
-- container health reports `healthy`
-- Oracle database starts successfully
-- ORDS reports successful initialization
-- host remains within the planned resource budget
+**PASS:** The container reports healthy, Oracle initializes successfully, ORDS starts, and the host remains within its resource budget.
 
-### STOP
-Stop if the container exits, repeatedly fails health checks, reports unresolved initialization errors, cannot write `/u01/data`, or causes unacceptable host memory pressure.
+**STOP:** Stop on repeated health failures, initialization errors, storage errors, or unacceptable host memory pressure.
 
-## 8. Verify APEX / ORDS
+## 7. Verify ORDS/APEX
 
-From a browser with network access to the host, open:
+From the operator workstation, open:
 
 ```text
 https://<LAB_HOST>:<HOST_HTTPS_PORT>/ords/apex
 ```
 
-The container uses a self-signed certificate by default, so a browser certificate warning is expected in a local lab unless a trusted certificate is added later.
+A self-signed certificate warning is expected in a local lab unless you replace the default certificate.
 
-### PASS
-The APEX endpoint responds and the APEX landing/login workflow is reachable.
+**PASS:** The ORDS/APEX endpoint responds.
 
-### STOP
-Do not proceed to schema or application deployment until the ORDS/APEX endpoint is reachable.
+**STOP:** Do not proceed to the project database deployment until the endpoint is reachable.
 
-## 9. Verify Control-Plane Connectivity
+## 8. Verify database connectivity
 
-After the runtime platform is healthy, return to the operator workstation and confirm that the Oracle client can connect using the locally stored wallet/client configuration.
+From the operator workstation, verify SQLcl can connect using the local wallet or client configuration appropriate to the container.
 
-Do not copy the operator wallet into the runtime host merely to satisfy this procedure.
+Keep wallet and TNS material on the operator side. Do not copy them onto the Ubuntu host simply to make the architecture symmetrical.
 
-The project database layer is then deployed and validated from the control plane using the documented schema deployment procedure and the repository scripts:
+Once client connectivity works, continue with [Deploy Database Schema with SQLcl](../deploy-database-schema.md).
 
-```text
-deploy/install.sql
-deploy/validate.sql
-```
+**PASS:** SQLcl reaches the database from the operator workstation.
 
-`deploy/install.sql` is an installation path, not a destructive reset path. It intentionally stops on SQL errors. Re-running it against already-existing project schemas can therefore fail at schema creation rather than silently replacing existing objects.
+**STOP:** Do not compensate for client connectivity problems by installing development tooling or storing operator credentials on the runtime host.
 
-If a clean reinstall is required, perform an explicit, deliberate lab reset before running the installer again. A future reset procedure may formalize that destructive operation; the container deployment procedure must not silently drop project schemas.
+## Failure handling
 
-### PASS
-- control-plane Oracle client reaches the database
-- project deployment can proceed from the workstation
-- no workstation wallet or Git tooling is required on the Oracle host
-
-### STOP
-Do not compensate for client connectivity or schema deployment problems by adding broad tooling, credentials, or source-control dependencies to the runtime host.
-
-## 10. Record Deployment Outcome
-
-Record only non-secret deployment facts:
-
-- Oracle image and tag
-- Ubuntu version
-- Docker version
-- mapped ports
-- Docker memory ceiling
-- volume name
-- deployment date
-- observed steady-state memory
-- runtime validation result
-- justified deviations
-
-Do not record passwords, wallet contents, private certificates, or host-specific secrets.
-
-## Failure Handling
 If deployment fails:
 
-1. Stop at the failed gate.
-2. Capture the failing command and relevant non-secret logs.
-3. Remove the failed container before retrying.
-4. If failure occurred during first-time database initialization, recreate the persistent volume unless the failure is known not to have modified database state.
-5. Determine whether the failure is host-specific, Docker-specific, image-specific, network-specific, or project-specific.
-6. Keep runtime-host troubleshooting separate from control-plane database deployment troubleshooting.
-7. Update this procedure only when the finding is reusable beyond one host.
+1. stop at the failed gate;
+2. capture the relevant non-secret command output or logs;
+3. decide whether the problem is Ubuntu, Docker, the Oracle image, storage, networking, or the project deployment;
+4. remove a failed container before retrying;
+5. if first-time initialization left an unusable volume, recreate the volume deliberately rather than trying random repair commands;
+6. update this procedure only when the finding is reusable for another operator.
 
 ## Cleanup
-After the validated deployment path is established:
 
-- remove obsolete Oracle images no longer required
-- remove failed/test containers
-- remove abandoned volumes
-- remove temporary runtime directories that are no longer used
-- retain only credentials required for the active lab and keep them outside Git
+For a disposable lab, remove abandoned containers, volumes, images, and runtime directories when they are no longer needed. Retain only the credentials and runtime state required by the active lab.
 
-## Completion Criteria
+## Completion criteria
+
 This procedure is complete when:
 
-- the Oracle Autonomous AI Database Free 26ai container reports healthy,
-- persistent runtime state is stored in the prepared Docker volume,
-- APEX/ORDS is reachable,
-- the database is reachable from the operator workstation,
-- no secrets have been committed,
-- the runtime host does not depend on Git or database deployment tooling,
-- the host remains healthy,
-- the deployment can be explained and repeated from this document alone.
+- the Oracle ADB Free container is healthy;
+- persistent database state is in the Docker volume;
+- ORDS/APEX is reachable;
+- SQLcl can reach the database from the operator workstation;
+- no secrets are stored in Git;
+- the Ubuntu host does not depend on development tooling or undocumented configuration.
 
-Project schema installation and data seeding are validated separately from container deployment.
-
-## Portability Notes
-The project aims for **practical portability**, not support for every possible platform.
-
-Documented runtime assumptions:
-- Ubuntu Linux
-- Docker
-- required host resources and capabilities
-- persistent runtime storage
-- APEX/ORDS reachability
-- network access from the operator workstation
-- no secrets in source control
-
-Documented control-plane assumptions:
-- source control is managed outside the Oracle host
-- an Oracle client such as SQLcl is available to the operator
-- connection credentials/wallets remain on the control plane
-
-Environment-specific choices:
-- hostname or IP address
-- filesystem paths for local runtime support files and secrets
-- host port mappings
-- DNS and optional reverse proxy/ingress configuration
-
-Operators using another distribution or container runtime are welcome to adapt the procedure, but those combinations are not part of the project's validated reference path.
+At that point the Oracle platform is ready for the repository's install, seed, and validation steps.
