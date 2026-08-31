@@ -2,25 +2,24 @@
 
 ## Purpose
 
-This document describes the current V1 architecture for `oracle-estate-operations`.
+This document describes the V1 architecture for `oracle-estate-operations`.
 
-The project follows the same operating pattern used in the README:
+The project follows a simple operating pattern:
 
 1. define a supportable standard;
-2. model the estate around the questions operators actually need to answer;
+2. model the estate around the questions operators need to answer;
 3. expose state and exceptions through shared database views;
-4. automate repeatable validation;
+4. automate repeatable deployment and validation;
 5. document the remaining operator work;
 6. preserve justified exceptions instead of forcing uniformity for its own sake.
 
-The repository is fictional and sanitized. It does not contain employer code, configuration, hostnames, credentials, application names, or proprietary operating procedures.
+The repository is fictional and sanitized. It contains no employer code, configuration, hostnames, credentials, application names, or proprietary operating procedures.
 
-## Current V1 Scope
+## V1 scope
 
-The V1 seed estate models five fictional applications across development, QA, test, UAT, and production. It includes:
+The seed estate models five fictional applications across development, QA, test, UAT, and production. It includes:
 
-- single-instance and RAC CDBs;
-- multiple PDBs within CDBs;
+- RAC CDBs and multiple PDBs;
 - East/West Data Guard peers for production-like environments;
 - RAC instance and node topology;
 - application and support ownership;
@@ -30,13 +29,35 @@ The V1 seed estate models five fictional applications across development, QA, te
 - documented standards exceptions;
 - intentionally seeded operational faults for validation.
 
-The current seed topology contains seven CDB occurrences and 40 PDB occurrences.
+The topology contains four RAC clusters, seven CDB occurrences, 40 PDB occurrences, and three Data Guard relationships.
 
-## Inventory Grain
+## Runtime layout
+
+The public deployment path separates the operator workstation from the disposable Oracle runtime host:
+
+```text
+Operator workstation
+Windows / macOS / Linux
+Git / SQLcl / browser
+        |
+        v
+Ubuntu Server LTS
+        |
+        v
+Docker
+        |
+        v
+Oracle ADB Free
+Database + ORDS/APEX
+```
+
+The Linux host does not need the project repository, Git, SQLcl, or the operator's Oracle wallet. Those remain on the workstation. The host provides the container runtime, storage, and network endpoint.
+
+## Inventory grain
 
 The primary operational inventory is **one PDB occurrence per `DB_UNIQUE_NAME`**.
 
-That distinction matters for Data Guard. A logical PDB may exist on both a primary and standby peer, and both occurrences belong in operational inventory because they represent two different physical database targets.
+That distinction matters for Data Guard. A logical PDB may exist on both a primary and standby peer, and both occurrences belong in operational inventory because they are different physical database targets.
 
 A DBA or application owner should be able to begin with the PDB and answer the common questions first:
 
@@ -58,9 +79,9 @@ DB_CLUSTER
          +-- PDB occurrence -> environment -> project/application
 ```
 
-`V_ESTATE_STATUS` therefore returns one row per PDB occurrence on a `DB_UNIQUE_NAME`. One-to-many RAC instance detail is kept in supporting views such as `V_CDB_INSTANCE_STATUS` so it cannot duplicate rows in the main inventory.
+`V_ESTATE_STATUS` returns one row per PDB occurrence on a `DB_UNIQUE_NAME`. One-to-many RAC instance detail stays in supporting views such as `V_CDB_INSTANCE_STATUS` so it cannot duplicate rows in the main inventory.
 
-## Architecture
+## Database boundary
 
 ```text
                          ESTATE
@@ -81,11 +102,11 @@ DB_CLUSTER
          Oracle APEX           CLI / validation
 ```
 
-Oracle is the system of record for the lab. The important design choice is that APEX and command-line tooling consume the same database views instead of each rebuilding joins and operating rules independently.
+Oracle is the system of record for the lab. APEX and command-line tooling consume the same database views instead of each rebuilding joins and operating rules independently.
 
-## Data Owner Layer
+### `ESTATE`
 
-`ESTATE` owns the base model. The implemented tables cover:
+`ESTATE` owns the base model for:
 
 - projects and operational ownership;
 - environments;
@@ -99,11 +120,11 @@ Oracle is the system of record for the lab. The important design choice is that 
 - patch groups and CDB schedules;
 - standards exceptions.
 
-The model keeps application identity, infrastructure placement, and current operational state separate where they can change independently.
+Application identity, infrastructure placement, and current operating state remain separate where they can change independently.
 
-## App Objects Layer
+### `ESTATE_AO`
 
-`ESTATE_AO` owns the curated operational interface. V1 currently exposes:
+`ESTATE_AO` owns the curated operational interface:
 
 - `V_ESTATE_STATUS`
 - `V_CDB_INSTANCE_STATUS`
@@ -114,21 +135,39 @@ The model keeps application identity, infrastructure placement, and current oper
 - `V_DR_STATUS`
 - `V_ACTIVE_EXCEPTIONS`
 
-These views are the contract presented to APEX and validation tooling. Base-table structure can evolve without forcing every consumer to know how the underlying joins work.
+These views are the contract presented to APEX and validation tooling. Consumers do not need to know the joins behind the base model.
 
-## APEX Layer
+### `APPESTATE`
 
-APEX is the human-facing operations interface, not the source of operational logic.
+`APPESTATE` is the least-privilege runtime identity used by APEX. It receives `READ` only on the approved `ESTATE_AO` views and no direct access to `ESTATE` tables.
 
-The current V1 application contains an **Estate Overview** faceted search backed directly by `ESTATE_AO.V_ESTATE_STATUS`.
+See [Security Model](security-model.md) for the complete privilege boundary.
 
-Additional pages such as service compliance, patch readiness, Data Guard status, or exception review are reasonable next steps because the backing views already exist, but they are not required for the current V1 to prove the pattern.
+## APEX layer
 
-The UI stays intentionally small. I would rather add a page because an operator needs it than because another page makes the portfolio look more complete.
+APEX is a human-facing operations interface, not the source of operational logic.
 
-## Validation Layer
+The V1 application contains an **Estate Overview** faceted search backed directly by `ESTATE_AO.V_ESTATE_STATUS`. The public repository includes screenshots of that page but does not include an APEX application export.
 
-`deploy/validate.sql` checks both structure and operating state. Current checks include:
+Additional interfaces can consume the existing service, patch, DR, and exception views when an operator need justifies them. They are not part of V1.
+
+## Deployment and validation
+
+The database deployment path is deliberately explicit:
+
+```text
+deploy/install.sql
+        |
+        v
+deploy/seed.sql
+        |
+        v
+deploy/validate.sql
+```
+
+`install.sql` creates the schema and privilege boundary. `seed.sql` loads the reference topology and operational scenarios. `validate.sql` checks both structure and operating state.
+
+Current validation covers:
 
 - schema and object validity;
 - PDB inventory grain;
@@ -140,16 +179,16 @@ The UI stays intentionally small. I would rather add a page because an operator 
 - active standards exceptions;
 - cross-project account ownership.
 
-Some of those checks are expected to return seeded findings. The goal is to verify that the model can represent and surface a problem, not to make every result green.
+Some findings are intentionally seeded. The goal is to prove that the model can represent and surface a problem, not to make every result green.
 
-## Documentation Model
+## Documentation model
 
-Top-level runbooks describe a complete operator task. Reusable actions live under `docs/runbooks/procedures/` so the same procedure can be called from more than one runbook without maintaining duplicate instructions.
+Top-level runbooks describe a complete operator task. Reusable actions live under `docs/runbooks/procedures/` when the same procedure belongs to more than one task.
 
-A reusable procedure should include prerequisites, actions, validation, stop conditions, failure handling, and completion criteria. If a task is automated later, the procedure still documents the inputs, expected result, and recovery path.
+A procedure should make prerequisites, actions, validation, stop conditions, failure handling, and completion clear enough that another qualified operator can follow it without knowing how the original lab was built.
 
-## V1 Boundaries
+## V1 boundaries
 
-V1 intentionally stops before Terraform provisioning, Ansible configuration management, CI/CD, enterprise SSO, live OEM integration, and production-grade observability.
+V1 stops before Terraform provisioning, Ansible configuration management, CI/CD, enterprise SSO, live OEM integration, production-grade observability, and a deployable APEX export.
 
-Those are all reasonable technologies in a larger platform. They are deferred here because the current problem does not require them. New components should be added when they remove real operator work, improve control, or make the estate easier to support.
+Those components belong here only when they remove real operator work, improve control, or make the estate easier to support.
