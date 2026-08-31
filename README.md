@@ -1,32 +1,65 @@
 # oracle-estate-operations
 
-Reference implementation for standardizing, automating, and operating a fictional enterprise Oracle database estate.
+A small, fictional Oracle estate used to show how I tend to approach database operations: define a supportable standard, make the important state visible, automate the repeatable work, document the exceptions, and leave the result in a condition another DBA can support.
 
 ## Why this project exists
 
-Large database estates become difficult to operate when every application develops its own naming, deployment, support, and exception patterns. The answer is not to make every workload identical. It is to define a supportable default, make operational state visible, automate repeatable checks, and document the places where an application has a legitimate reason to differ.
+Large database estates get hard to operate when every application grows its own naming, deployment, support, and exception patterns. I do not think the answer is to force every workload into the same shape. The useful goal is a clear default, enough structure to make the environment understandable, and an explicit way to handle the places where a workload legitimately differs.
 
-This project models that approach with a small fictional Oracle estate.
-
-The operating pattern is simple:
+The operating pattern for this project is:
 
 > Define the standard, model the estate, expose useful state, automate repeatable work, document exceptions, and make the result supportable by someone else.
 
-That progression matters more here than any individual tool. Oracle, SQLcl, APEX, and scripts are used because they fit the problem being modeled.
+The tools are secondary to that pattern. Oracle, SQLcl, APEX, and scripts are here because they fit the problem being modeled.
 
 ## What is implemented
 
-The current V1 database foundation includes:
+The current V1 foundation includes:
 
 - a normalized Oracle data model for projects, environments, clusters, CDBs, RAC instances, PDBs, services, Data Guard relationships, accounts, patch schedules, and standards exceptions;
 - PDB-grain operational inventory with RAC and CDB topology available as supporting detail;
 - a three-schema security model separating data ownership, application-facing objects, and runtime access;
 - curated operational views for estate status, topology, ownership, service placement, patch readiness, DR status, and active exceptions;
-- fictional seed data with intentionally unhealthy or non-standard states so validation produces useful output instead of an unrealistically perfect estate;
+- fictional seed data with a small number of intentional faults and exceptions so validation has something meaningful to report;
 - SQLcl installation and validation scripts;
-- documentation for architecture, standards, security, data modeling, seed-data design, and repeatable operating procedures.
+- an Oracle APEX Estate Overview built as a faceted search over `ESTATE_AO.V_ESTATE_STATUS`;
+- architecture, standards, security, data-model, seed-design, and operator runbook documentation.
 
-An Oracle APEX operations application is being built on top of the same curated views. The application export and screenshots will be added to the repository before the V1 public release.
+The APEX application is intentionally small. I want the database layer to own the operational rules and APEX to make those rules useful to an operator, not recreate them in page SQL.
+
+## Start here
+
+There are two useful ways into the repository depending on what you are trying to do.
+
+**If you want to understand the design:**
+
+1. [Architecture](docs/architecture.md) — system boundaries and why the pieces are separated.
+2. [Estate Standard](docs/estate-standard.md) — the supportable defaults and how exceptions are handled.
+3. [Data Model](docs/data-model.md) — how projects, CDBs, PDBs, services, ownership, DR, patching, and exceptions are represented.
+4. [Security Model](docs/security-model.md) — schema ownership and the runtime privilege boundary.
+
+**If you want to build the lab:**
+
+1. Start with the [Lab Deployment Runbook](docs/runbooks/lab-deployment.md). It covers the lab prerequisites and gets the Oracle environment ready for this project.
+2. Follow the [Database Schema Deployment Runbook](docs/runbooks/deploy-database-schema.md) to install the estate schemas and supporting objects.
+3. Run [`deploy/validate.sql`](deploy/validate.sql) and work through the validation results before treating the deployment as complete.
+4. The [runbook procedures](docs/runbooks/procedures/) contain the reusable steps used by the higher-level runbooks.
+
+The README is the landing page; the runbooks are the execution path. The design documents explain why the runbooks and database objects are structured the way they are.
+
+## Estate Overview
+
+The Estate Overview presents the fictional estate at PDB grain. It reads directly from `ESTATE_AO.V_ESTATE_STATUS`, so the same database logic can be used by APEX, validation scripts, or another interface without maintaining separate reporting rules.
+
+![Oracle Estate Operations Estate Overview](docs/images/estate-overview.png)
+
+*Estate Overview: PDB-grain inventory with facets for application, environment, database identity, role, ownership, and other support attributes.*
+
+The facets narrow the same inventory to the part of the estate relevant to the question being asked. Filtering to production, for example, makes application ownership and primary/standby placement easy to see without changing the underlying model.
+
+![Oracle Estate Operations production inventory](docs/images/estate-overview-prod.png)
+
+*Production inventory: the same operational view filtered to PROD, showing application ownership and primary/standby placement.*
 
 ## Architecture at a glance
 
@@ -49,33 +82,33 @@ An Oracle APEX operations application is being built on top of the same curated 
          Oracle APEX           CLI / validation
 ```
 
-The database layer is the system of record for the lab. APEX and command-line tooling consume the same operational views rather than recreating rules independently in each interface.
+Oracle is the system of record for the lab. APEX and command-line tooling consume the same operational views instead of rebuilding joins and rules in each interface.
 
-The main inventory is intentionally PDB-grain. A DBA or application owner should be able to start with a PDB and answer the common support questions without first reconstructing the RAC or CDB topology. Infrastructure detail remains available for drill-down and validation without duplicating the primary inventory rows.
+The main inventory is intentionally PDB-grain. A DBA or application owner should be able to start with a PDB and answer the common support questions without first reconstructing the RAC or CDB topology. Infrastructure detail is still available for drill-down and validation, but it does not multiply the primary inventory rows.
 
 See [Architecture](docs/architecture.md) and [Data Model](docs/data-model.md) for the full design.
 
 ## Why the schemas are separated
 
-V1 uses three schemas because data ownership, application-facing database logic, and runtime access are different concerns.
+Data ownership, application-facing database objects, and runtime access are different concerns, so V1 keeps them separate:
 
 - `ESTATE` owns the base data model.
-- `ESTATE_AO` owns curated application-facing views and related database objects.
+- `ESTATE_AO` owns curated application-facing views and related objects.
 - `APPESTATE` is the least-privilege runtime identity used by APEX.
 
-`APPESTATE` does not receive direct access to the `ESTATE` base tables. For read-only interfaces, the project prefers Oracle `READ` privileges over `SELECT` when locking behavior such as `SELECT ... FOR UPDATE` is not required.
+`APPESTATE` has no direct access to the `ESTATE` base tables. For read-only interfaces, the project uses Oracle `READ` rather than `SELECT` when locking behavior such as `SELECT ... FOR UPDATE` is not needed.
 
-This adds a little structure, but it makes the security boundary visible and testable. If an application cannot perform an action, the first question should be which privilege or ownership boundary is missing, not which broad role can be granted to make the error disappear.
+The extra separation is deliberate because it makes the security boundary visible and testable. If the application cannot do something, I would rather identify the missing privilege or ownership boundary than solve the problem by granting a broad role.
 
 See [Security Model](docs/security-model.md) for the privilege chain and validation targets.
 
 ## Standards are defaults, not dogma
 
-The estate standard exists to remove unnecessary variation. It is not intended to override a valid application requirement.
+The estate standard exists to remove unnecessary variation, not to override a valid application requirement.
 
-A deviation is acceptable when it has a technical or operational reason, but the exception should be explicit, owned, reviewable, and visible to the people supporting the system. The fictional estate therefore includes documented exceptions and operational faults on purpose.
+A deviation is acceptable when there is a technical or operational reason for it, but the exception should be explicit, owned, reviewable, and visible to the people supporting the system.
 
-Current validation scenarios include:
+The seed data therefore includes a few deliberate conditions:
 
 - an expected-versus-observed RAC service placement mismatch;
 - a deferred patch schedule;
@@ -89,19 +122,19 @@ See [Estate Standard](docs/estate-standard.md) and [Seed Data Design](docs/seed-
 
 ## Install and validate
 
-The database layer is installed with SQLcl while connected as an administrative account:
+Install the database layer with SQLcl while connected as an administrative account:
 
 ```sql
 @deploy/install.sql
 ```
 
-The installer prompts for the three schema passwords rather than storing credentials in the repository. After installation, run:
+The installer prompts for the three schema passwords rather than storing credentials in the repository. Then run:
 
 ```sql
 @deploy/validate.sql
 ```
 
-Validation checks both structural expectations and intentionally seeded operational states. Examples include schema privilege boundaries, inventory grain, service placement, patch readiness, Data Guard health, and active standards exceptions.
+Validation checks the schema boundary, inventory grain, service placement, patch readiness, Data Guard state, active exceptions, and the intentional seed scenarios.
 
 For lab prerequisites and deployment steps, start with the [Lab Deployment Runbook](docs/runbooks/lab-deployment.md).
 
@@ -114,10 +147,11 @@ deploy/
 
 docs/
   architecture.md         system boundaries and design
-  data-model.md           entity relationships and inventory grain
+  data-model.md           implemented relationships and inventory grain
   estate-standard.md      default operating standards and exceptions
   security-model.md       schema ownership and privilege model
   seed-data-design.md     fictional topology and test scenarios
+  images/                 APEX screenshots used in project documentation
   runbooks/               operator-focused deployment and procedures
 
 sql/
@@ -129,17 +163,17 @@ sql/
 
 ## Documentation approach
 
-Documentation in this repository is treated as part of the operating model rather than a final project summary.
+I treat documentation as part of the operating model, not as the write-up that happens after the engineering is finished.
 
-Top-level runbooks describe the task an operator is trying to complete. Reusable procedures are kept separate so the same steps can be called from more than one runbook without maintaining duplicate instructions. Procedures should include prerequisites, actions, validation, stop conditions, failure handling, and a clear definition of completion.
+Top-level runbooks describe the task an operator is trying to complete. Reusable procedures are kept separate so the same steps can be called from more than one runbook without maintaining duplicate instructions. Procedures include prerequisites, actions, validation, stop conditions, failure handling, and a clear definition of completion.
 
-The goal is that a qualified DBA who did not design the system can understand what it is supposed to do, recognize when it is outside the standard, and know where to look next.
+The test is simple: a qualified DBA who did not design the system should be able to understand what it is supposed to do, recognize when it is outside the standard, and know where to look next.
 
 ## V1 boundaries
 
-This is intentionally not a simulation of a full enterprise Oracle platform. V1 does not attempt to include Terraform provisioning, Ansible configuration management, CI/CD, enterprise SSO, live OEM integration, or production-grade observability.
+This is not intended to simulate a full enterprise Oracle platform. V1 does not include Terraform provisioning, Ansible configuration management, CI/CD, enterprise SSO, live OEM integration, or production-grade observability.
 
-Those are useful technologies, but adding them only to make the repository look more complicated would work against the purpose of the project. Later additions should solve a concrete operating problem or demonstrate a clear next step in the design.
+Those technologies are useful, but they do not belong here just to make the repository look more complicated. I would add them when they solve a concrete operating problem or represent a useful next step in the design.
 
 ## Public-safe by design
 

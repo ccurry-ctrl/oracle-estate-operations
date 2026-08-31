@@ -1,359 +1,199 @@
-# V1 Logical Data Model
+# V1 Data Model
 
 ## Purpose
 
-Define the initial logical model for the fictional Oracle estate represented by this project.
+This document describes the implemented V1 data model for the fictional Oracle estate.
 
-The model is intentionally centered on **ownership and operational relationships**, not only on database inventory. A database is an important managed asset, but it is not assumed to be the sole source of application identity.
+The model is centered on the questions an operator needs to answer, not just on listing databases. Application identity, environment, infrastructure placement, ownership, and current operating state are related, but they are not the same thing and should not be collapsed into one record or naming convention.
 
-## Core Design Idea
-
-A fictional project/application is represented once, then associated with the databases, schemas/accounts, and other assets that belong to it.
-
-Example:
-
-```text
-Project 001: Chris' App
-
-A001   DEV
-D001   QA
-U001   UAT
-P001A  PROD
-P001B  PROD
-```
-
-Application metadata such as description, owner, SME, manager, and support landing page should be maintained at the project level where possible so it can be changed once and reflected across every related database.
-
-At the same time, assets inside a database may belong to a different project than the database's default application ownership. For example, a database primarily supporting Project 002 may contain an account owned by Project 001 for a database link or integration use case.
-
-The model must therefore preserve the principle:
+The working rule is:
 
 > Where an object lives does not necessarily determine who owns it.
 
-## Primary Entities
+That applies to PDBs, accounts, services, and the application relationships around them.
 
-### `PROJECT`
+## Inventory Grain
 
-Represents the application/project ownership record.
+The main inventory grain is **one PDB occurrence per `DB_UNIQUE_NAME`**.
 
-Initial attributes:
-
-- project identifier;
-- application/project name;
-- description;
-- primary owner;
-- SME;
-- manager;
-- support or application landing page;
-- lifecycle/status indicator.
-
-The project identifier is an internal catalog key and should not require parsing database names.
-
-### `ENVIRONMENT`
-
-Defines normalized lifecycle environments independently from naming conventions.
-
-Initial values may include:
-
-- DEV
-- QA
-- UAT
-- PERF
-- PROD
-- DR
-- OTHER
-
-A database name such as `P001A` may communicate useful information to an operator, but application logic should not have to parse the name to determine environment.
-
-### `DATABASE`
-
-Represents a logical Oracle database target in the fictional estate.
-
-Initial attributes:
-
-- database identifier;
-- database name;
-- environment;
-- database type / topology indicator;
-- Oracle version;
-- operational status;
-- Data Guard role where applicable;
-- cluster association where applicable;
-- description;
-- default/primary project relationship;
-- patch group;
-- lifecycle/status metadata.
-
-A database may support more than one project, so ownership should not be permanently constrained to a single `PROJECT_ID` column if a mapping table provides a cleaner long-term model.
-
-### `DATABASE_PROJECT`
-
-Associates projects with databases.
-
-Initial relationship intent:
-
-- one database may be associated with multiple projects;
-- one project may span multiple databases and environments;
-- one relationship may be marked as primary/default for display and operational routing.
-
-This avoids duplicating project metadata across each database row.
-
-### `CLUSTER`
-
-Represents a RAC cluster or logical database hosting cluster.
-
-Initial attributes:
-
-- cluster identifier;
-- cluster name;
-- location/site;
-- platform description;
-- lifecycle/status metadata.
-
-### `NODE`
-
-Represents a cluster/host node used for service placement and topology display.
-
-Initial attributes:
-
-- node identifier;
-- node name;
-- cluster identifier;
-- operational status.
-
-### `DATABASE_INSTANCE`
-
-Represents the relationship between a logical database and the node/instance on which it runs.
-
-Initial attributes:
-
-- database identifier;
-- node identifier;
-- instance name;
-- instance number where useful;
-- observed status.
-
-This supports both single-instance and RAC examples without forcing node columns directly onto the database record.
-
-### `SERVICE`
-
-Represents an Oracle database service.
-
-Initial attributes:
-
-- service identifier;
-- database identifier;
-- service name;
-- purpose/description;
-- operational status.
-
-### `SERVICE_PLACEMENT`
-
-Represents expected and observed node placement for a service.
-
-The model should support questions such as:
+A logical PDB can appear more than once when it exists on separate Data Guard peers. For example:
 
 ```text
-SERVICE       EXPECTED        OBSERVED        STATUS
-sort_app      node1,node2     node1,node2     COMPLIANT
-reporting     node3           node2           EXCEPTION
+Project  PDB   Environment  DB_UNIQUE_NAME  Role
+001      P001  PROD         PHR001E         PRIMARY
+001      P001  PROD         PHR001W         STANDBY
 ```
 
-Expected state and observed state should remain distinguishable so compliance can be calculated rather than stored as an unexplained flag.
+Those are two operational targets, not duplicate rows.
 
-### `DB_ACCOUNT`
+RAC instances and cluster nodes are supporting infrastructure beneath the CDB. A PDB is not assigned to one RAC instance. Service placement is modeled separately because services are what express where workload is expected to run.
 
-Represents an account/schema discovered or cataloged within a database.
-
-Initial attributes:
-
-- account identifier;
-- database identifier;
-- username/schema name;
-- account status;
-- last password change date where modeled;
-- account type or purpose;
-- lifecycle/status metadata.
-
-The account is not assumed to inherit ownership from the database.
-
-### `ACCOUNT_PROJECT`
-
-Associates an account/schema with the project that owns or is responsible for it.
-
-This supports cases such as:
-
-```text
-Database P002
-  primary project: Project 002
-
-Accounts
-  SHAWN_APP       -> Project 002
-  APPCHRISAPP     -> Project 001
-  MONITOR_USER    -> shared/infrastructure ownership
-```
-
-V1 may initially restrict an account to one primary project relationship while preserving a mapping-table design for future flexibility.
-
-### `DR_RELATIONSHIP`
-
-Represents the relationship between primary, standby, or other resiliency targets.
-
-Initial attributes:
-
-- relationship identifier;
-- source database;
-- target database;
-- relationship type;
-- expected role;
-- observed role/status;
-- protection or operational notes.
-
-The model must support justified nonstandard DR patterns as documented exceptions rather than assuming every application uses an identical design.
-
-### `PATCH_GROUP`
-
-Defines a reusable maintenance grouping or patch strategy.
-
-Initial attributes:
-
-- patch group identifier;
-- name;
-- description;
-- cadence or scheduling notes.
-
-### `PATCH_SCHEDULE`
-
-Represents planned and completed maintenance for a database or other managed platform component.
-
-Initial attributes:
-
-- target type;
-- target identifier;
-- planned date/window;
-- patch/RU identifier;
-- status;
-- completion date;
-- notes.
-
-V1 should focus first on database RU scheduling while leaving room for later Grid, DomU, or infrastructure scheduling concepts.
-
-### `STANDARD_EXCEPTION`
-
-Records a deliberate deviation from an estate standard.
-
-Initial attributes:
-
-- exception identifier;
-- target type;
-- target identifier;
-- standard/rule being excepted;
-- business or technical reason;
-- owner;
-- review date;
-- status.
-
-An exception is not automatically a failure. A documented, justified, monitored deviation may be compliant with the operating model even though it differs from the default standard.
-
-## Relationship Sketch
+## Core Relationships
 
 ```text
 PROJECT
-  |\
-  | \-----------------------+
-  |                         |
-  v                         v
-DATABASE_PROJECT       ACCOUNT_PROJECT
-  |                         |
-  v                         v
-DATABASE -------------- DB_ACCOUNT
-  |
-  +---- ENVIRONMENT
-  |
-  +---- CLUSTER ---- NODE
-  |          \        /
-  |        DATABASE_INSTANCE
-  |
-  +---- SERVICE ---- SERVICE_PLACEMENT ---- NODE
-  |
-  +---- DR_RELATIONSHIP ---- DATABASE
-  |
-  +---- PATCH_GROUP / PATCH_SCHEDULE
-  |
-  +---- STANDARD_EXCEPTION
+   |
+   +---- PDB_PROJECT ---- PDB ---- CDB ---- DB_CLUSTER
+   |                       |         |           |
+   |                       |         |           +---- CLUSTER_NODE
+   |                       |         |                    |
+   |                       |         +---- DB_INSTANCE ----+
+   |                       |
+   |                       +---- DB_ACCOUNT ---- ACCOUNT_PROJECT ---- PROJECT
+   |                       |
+   |                       +---- DB_SERVICE ---- SERVICE_INSTANCE_EXPECTATION ---- DB_INSTANCE
+   |
+CDB ---- DR_RELATIONSHIP ---- CDB
+ |
+ +---- CDB_PATCH_SCHEDULE ---- PATCH_GROUP
+ |
+ +---- STANDARD_EXCEPTION
+
+PDB ---- STANDARD_EXCEPTION
 ```
 
-The exact physical foreign-key implementation may differ slightly once DDL is reviewed. The logical intent is more important than prematurely fixing every join table.
+## Business and Ownership Model
 
-## Ownership as a First-Class Concern
+### `PROJECT`
 
-The application should answer four basic questions quickly:
+`PROJECT` is the reusable application/ownership anchor. It holds the project code, application name, description, owner, SME, manager, support URL, and active state.
 
-1. **What is this asset?**
-2. **Where is it and what role is it performing?**
-3. **Is it operating according to the expected standard?**
-4. **Who owns it or should be contacted about it?**
+The point is to maintain application ownership once and associate it with the PDBs and accounts that belong to it instead of repeating the same contact information across inventory rows.
 
-Ownership metadata should therefore be reusable across APEX pages and operational views rather than stored as free-text columns repeatedly across unrelated tables.
+### `PDB_PROJECT`
 
-V1 may begin with owner/SME/manager attributes on `PROJECT` for simplicity. A later normalized `PERSON` / `CONTACT` model should be introduced only if the application develops a real need for shared contact records or multiple responsibility types.
+`PDB_PROJECT` maps PDB occurrences to projects. A PDB can have multiple project relationships, but V1 allows only one relationship to be marked primary for the main inventory.
 
-## V1 Operational Views
+This gives the Estate Overview a clear default application while preserving the ability to represent shared or secondary relationships.
 
-The physical model should support at least these application-facing views in `ESTATE_AO`:
+### `DB_ACCOUNT` and `ACCOUNT_PROJECT`
 
-- `V_ESTATE_STATUS`
-- `V_DATABASE_DETAIL`
-- `V_SERVICE_COMPLIANCE`
-- `V_ACCOUNT_OWNERSHIP`
-- `V_PATCH_CALENDAR`
-- `V_DR_STATUS`
-- `V_STANDARD_EXCEPTIONS`
+Accounts are modeled at PDB level and have their own project relationship.
 
-Naming may be adjusted during DDL review, but the important design rule is that APEX and CLI tooling consume a shared operational abstraction instead of independently reimplementing joins and compliance logic.
+That is intentional. An integration schema or service account can live in one application's PDB while belonging to another project. The model does not infer account ownership from PDB ownership.
 
-## Seed-Data Intent
+## Oracle Infrastructure Model
 
-V1 seed data should contain roughly 20 fictional databases across several fictional applications and environments.
+### `ENVIRONMENT`
 
-The seed estate should include enough variation to demonstrate real operational questions:
+`ENVIRONMENT` stores the workload lifecycle classification independently from database naming. V1 includes values such as DEV, QA, TEST, UAT, PERF, PROD, and DR as required by the seed model.
 
-- one RAC application family across DEV/QA/UAT/PROD;
-- one single-instance application family;
-- several Data Guard relationships;
-- one database supporting more than one project;
-- at least one account owned by a project different from the database's primary project;
-- one service placed on the wrong node;
-- one database behind its expected RU;
-- one missing or degraded DR condition;
-- one documented and justified standards exception that should not be treated as an error.
+### `DB_CLUSTER` and `CLUSTER_NODE`
 
-The goal is not to make the fictional estate artificially unhealthy. It is to provide enough intentional variation that APEX pages and validation tooling demonstrate operational reasoning rather than only displaying inventory.
+These tables model the hosting cluster and its nodes. They provide infrastructure context without changing the grain of the main PDB inventory.
 
-## Deferred Entities
+### `CDB`
 
-The following are deliberately deferred until V1 needs them:
+`CDB` represents a physical Oracle database identified by `DB_UNIQUE_NAME`.
 
-- tablespace and datafile history tables;
-- detailed capacity trend history;
-- OEM target/metric ingestion tables;
-- generalized contact/person directory;
-- ticket/change-management integration;
-- audit-event history;
-- cloud tenancy or infrastructure-resource inventory;
-- Mongo/document API-specific objects.
+It stores:
 
-These should be added when they support a concrete feature rather than pre-modeled for completeness.
+- Oracle `DB_NAME` as `CDB_NAME`;
+- `DB_UNIQUE_NAME` as the physical database identity;
+- single-instance or RAC architecture;
+- current database role;
+- Oracle version;
+- cluster association;
+- active state.
 
-## Review Questions Before DDL
+Data Guard role is stored as state rather than encoded into the name because PRIMARY and STANDBY can change after a switchover or failover.
 
-Before generating physical DDL, confirm:
+### `DB_INSTANCE`
 
-1. Is `PROJECT` the correct reusable application/ownership anchor?
-2. Should `DATABASE_PROJECT` allow multiple active project relationships in V1, or should V1 enforce one primary relationship plus optional secondary relationships?
-3. Is account/schema ownership correctly independent from database ownership?
-4. Is `SERVICE_PLACEMENT` sufficient to model expected versus observed service-node state?
-5. Does the initial DR model need anything beyond source, target, type, expected role, observed state, and notes?
-6. Are owner, SME, and manager fields sufficient for V1 without introducing a normalized people/contact model?
+`DB_INSTANCE` maps a CDB's instances to cluster nodes. It captures instance name, instance number, status, and active state.
 
-Once these are agreed, the next change should generate the three schemas, base tables, grants, operational views, validation SQL, and fictional seed data.
+Keeping this one-to-many topology separate prevents RAC instance rows from multiplying the PDB-level main inventory.
+
+### `PDB`
+
+`PDB` is the primary business-facing database object in the model. Each row belongs to one CDB occurrence and one environment and stores its name, open mode, description, and active state.
+
+Because the same logical PDB can exist on multiple Data Guard peers, PDB name is unique within a CDB rather than globally.
+
+## Service Placement
+
+### `DB_SERVICE`
+
+`DB_SERVICE` defines an Oracle service for a PDB.
+
+### `SERVICE_INSTANCE_EXPECTATION`
+
+This table keeps expected and observed service placement side by side for each RAC instance.
+
+That lets `V_SERVICE_COMPLIANCE` derive status instead of storing a hand-maintained compliance flag:
+
+```text
+EXPECTED  OBSERVED  RESULT
+Y         Y         COMPLIANT
+N         N         COMPLIANT
+Y         N         MISMATCH
+N         Y         MISMATCH
+```
+
+The model can therefore answer both **where should this service run?** and **where is it currently observed?**
+
+## Data Guard
+
+### `DR_RELATIONSHIP`
+
+Data Guard relationships are modeled at CDB level because role, transport, and apply state belong to the physical database pair rather than to one individual PDB.
+
+The relationship stores:
+
+- primary CDB;
+- standby CDB;
+- protection mode;
+- transport status;
+- apply status.
+
+`V_DR_STATUS` presents that state in operator-friendly form.
+
+## Patching
+
+### `PATCH_GROUP`
+
+A patch group defines a target RU and maintenance window.
+
+### `CDB_PATCH_SCHEDULE`
+
+CDBs are scheduled into patch groups with scheduled date, completion date, and status. Patching is modeled at CDB level because RU lifecycle state belongs to the database infrastructure, while application impact is reached through the CDB-to-PDB relationships.
+
+## Exceptions
+
+### `STANDARD_EXCEPTION`
+
+Exceptions are stored as data rather than buried in notes or tribal knowledge.
+
+An exception can target a PDB or CDB and records:
+
+- exception type;
+- description;
+- justification;
+- approver;
+- review date;
+- active state.
+
+An exception is not automatically a failure. A justified, documented deviation can still be inside the operating model even though it differs from the default standard.
+
+## App-Facing Views
+
+`ESTATE_AO` currently exposes eight views:
+
+- `V_ESTATE_STATUS` - main PDB-grain inventory;
+- `V_CDB_INSTANCE_STATUS` - CDB, RAC instance, and node topology;
+- `V_PDB_OWNERSHIP` - PDB-to-project ownership;
+- `V_ACCOUNT_OWNERSHIP` - account ownership independent of PDB ownership;
+- `V_SERVICE_COMPLIANCE` - expected versus observed service placement;
+- `V_PATCH_READINESS` - CDB patch schedule and RU state;
+- `V_DR_STATUS` - Data Guard relationship state;
+- `V_ACTIVE_EXCEPTIONS` - active PDB/CDB standards exceptions.
+
+These views are the application contract. APEX and validation tooling consume them instead of rebuilding the underlying joins independently.
+
+## Design Choices Kept Deliberate
+
+A few things are intentionally not normalized further in V1.
+
+Owner, SME, and manager remain attributes on `PROJECT` rather than introducing a separate person/contact model. That is enough for the current use case and keeps the project understandable. A contact model can be added if a real requirement appears for reusable people, multiple responsibility types, or directory integration.
+
+Likewise, V1 does not add capacity history, OEM metric ingestion, ticketing integration, generalized cloud-resource inventory, or audit-event history. Those are reasonable additions only when there is an operating question that needs them.
