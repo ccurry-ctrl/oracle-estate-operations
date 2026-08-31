@@ -27,6 +27,26 @@ The current V1 foundation includes:
 
 The APEX application is intentionally small. I want the database layer to own the operational rules and APEX to make those rules useful to an operator, not recreate them in page SQL.
 
+## Start here
+
+There are two useful ways into the repository depending on what you are trying to do.
+
+**If you want to understand the design:**
+
+1. [Architecture](docs/architecture.md) — system boundaries and why the pieces are separated.
+2. [Estate Standard](docs/estate-standard.md) — the supportable defaults and how exceptions are handled.
+3. [Data Model](docs/data-model.md) — how projects, CDBs, PDBs, services, ownership, DR, patching, and exceptions are represented.
+4. [Security Model](docs/security-model.md) — schema ownership and the runtime privilege boundary.
+
+**If you want to build the lab:**
+
+1. Start with the [Lab Deployment Runbook](docs/runbooks/lab-deployment.md). It covers the lab prerequisites and gets the Oracle environment ready for this project.
+2. Follow the [Database Schema Deployment Runbook](docs/runbooks/deploy-database-schema.md) to install the estate schemas and supporting objects.
+3. Run [`deploy/validate.sql`](deploy/validate.sql) and work through the validation results before treating the deployment as complete.
+4. The [runbook procedures](docs/runbooks/procedures/) contain the reusable steps used by the higher-level runbooks.
+
+The README is the landing page; the runbooks are the execution path. The design documents explain why the runbooks and database objects are structured the way they are.
+
 ## Estate Overview
 
 The Estate Overview presents the fictional estate at PDB grain. It reads directly from `ESTATE_AO.V_ESTATE_STATUS`, so the same database logic can be used by APEX, validation scripts, or another interface without maintaining separate reporting rules.
