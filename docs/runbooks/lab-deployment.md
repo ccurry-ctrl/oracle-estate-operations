@@ -81,7 +81,7 @@ This runbook covers:
 - validating the database layer;
 - confirming the APEX/ORDS endpoint used by the lab.
 
-V1 includes an APEX Estate Overview built over `ESTATE_AO.V_ESTATE_STATUS`. The database objects and SQL validation are reproducible from this repository. The APEX application itself is currently a small UI layer and is not treated as the source of operational logic.
+V1 includes an APEX Estate Overview built over `ESTATE_AO.V_ESTATE_STATUS`. The database objects and SQL validation are reproducible from this repository. The APEX application is a small UI layer over those objects and is shown in the README; it is not the source of the operating rules.
 
 This runbook does not cover production hardening, enterprise authentication, CI/CD, Terraform, Ansible, live OEM integration, or general virtualization administration.
 
@@ -116,7 +116,7 @@ Do not continue merely because the container exists. Complete the validation in 
 
 **STOP:** Resolve the container, database, listener, or endpoint failure before deploying the estate schemas.
 
-## 3. Deploy Oracle Estate Operations
+## 3. Deploy the database objects
 
 From the cloned repository, connect with SQLcl as an administrative database account and run:
 
@@ -126,15 +126,42 @@ From the cloned repository, connect with SQLcl as an administrative database acc
 
 The installer prompts for the `ESTATE`, `ESTATE_AO`, and `APPESTATE` passwords. Passwords are not stored in the repository.
 
-The install creates the schema boundary, base model, application-facing views, grants, fictional topology, and operational scenarios.
+This step creates the three-schema boundary, base model, application-facing views, and grants. It does not load the fictional estate.
 
-For the schema-specific procedure and expected deployment behavior, see [Database Schema Deployment](../deploy-database-schema.md).
+For the schema-specific procedure and expected deployment behavior, see [Database Schema Deployment](deploy-database-schema.md).
 
 **PASS:** The install completes without unexplained SQL errors.
 
 **STOP:** Do not manually create missing objects to get past a failed install. Identify the failed deployment step, correct the script or prerequisite responsible, and run the documented deployment again.
 
-## 4. Validate the database layer
+## 4. Load the fictional estate
+
+Run:
+
+```sql
+@deploy/seed.sql
+```
+
+The seed step loads the reference topology first and the mutable operational scenarios second. The resulting estate contains:
+
+- five fictional projects;
+- four RAC clusters;
+- seven physical CDB occurrences;
+- 40 PDB occurrences;
+- three Data Guard relationships;
+- one deliberate service-placement mismatch;
+- one deferred patch schedule;
+- one lagging Data Guard apply condition;
+- one approved standards exception;
+- one cross-project account ownership case.
+
+The abnormal conditions are intentional. They exist so validation and the operational views have something useful to report.
+
+**PASS:** Both seed scripts complete without SQL errors.
+
+**STOP:** Do not edit the data manually to make a failed seed look correct. Fix the seed or the prerequisite that caused the failure.
+
+## 5. Validate the database layer
 
 Run:
 
@@ -144,23 +171,21 @@ Run:
 
 Validation checks the implemented model rather than simply checking that tables exist. It covers the schema boundary, inventory grain, service placement, patch readiness, Data Guard state, active exceptions, and the intentional seed scenarios.
 
-The fictional estate contains 40 PDB occurrences across seven physical CDB occurrences, four RAC clusters, five projects, and three Data Guard relationships. It also contains a small number of deliberately unhealthy or non-standard conditions so the operational views have something useful to report.
-
-See [Seed Data Design](../seed-data-design.md) for the topology and the reason each intentional condition exists.
+Some sections are assertions enforced by SQL failure behavior; others print expected results for operator review. Read the output. A script reaching the final prompt does not excuse an unexpected result in an inspection section.
 
 **PASS:** Structural checks succeed and the documented operational exceptions appear where expected.
 
 **STOP:** An unexplained invalid object, missing relationship, privilege failure, or unexpected operational result is a deployment failure. Resolve it before treating the lab as complete.
 
-## 5. Confirm the APEX layer
+## 6. Confirm the APEX layer
 
 Confirm that the ORDS/APEX endpoint is reachable from the operator workstation.
 
 The current V1 UI is the **Estate Overview**, a faceted search over `ESTATE_AO.V_ESTATE_STATUS`. It presents the same PDB-grain inventory used by the database layer rather than maintaining a second set of joins and operating rules inside APEX.
 
-The screenshots in the [README](../../README.md#estate-overview) show the expected V1 interface.
+The screenshots in the [README](../../README.md#estate-overview) show the V1 interface.
 
-**PASS:** The endpoint is reachable and the Estate Overview displays the fictional estate from the shared operational view.
+**PASS:** The endpoint is reachable. If the Estate Overview application is installed, it can read the shared operational view through the documented runtime boundary.
 
 **STOP:** Do not solve an APEX access problem by granting broad access to the `ESTATE` base tables. Use the documented [Security Model](../security-model.md) to identify the missing runtime privilege or ownership boundary.
 
@@ -179,7 +204,7 @@ Do not turn a successful one-off recovery command into undocumented required kno
 
 ## Completion criteria
 
-The lab is ready when:
+The reproducible V1 database lab is ready when:
 
 - Oracle is healthy and accepting connections;
 - ORDS/APEX is reachable;
@@ -187,7 +212,6 @@ The lab is ready when:
 - the fictional estate and operational scenarios are loaded;
 - `deploy/validate.sql` completes with the expected results;
 - the documented intentional exceptions are visible rather than silently ignored;
-- the Estate Overview can read the shared operational view through the documented runtime boundary;
-- another qualified operator could rebuild the lab without knowing how the original host was configured.
+- another qualified operator could rebuild the database layer without knowing how the original host was configured.
 
 At that point, the VM or host is replaceable. That is intentional.
