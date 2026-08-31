@@ -6,16 +6,16 @@ This document defines the default operating standard for the fictional Oracle es
 
 The standard exists to reduce unnecessary variation and make the environment easier for any qualified DBA to support. It is a default, not an absolute rule. A workload can differ when there is a valid technical or operational reason, but the exception should be explicit, owned, reviewable, and visible.
 
-## Standardization Principles
+## Standardization principles
 
 1. Prefer repeatable configuration over database-specific conventions.
 2. Keep operational metadata visible and current.
 3. Automate checks that are deterministic and repeatedly performed.
 4. Keep support procedures independent of one person's memory.
-5. Record exceptions with an owner, reason, and validation method.
+5. Record exceptions with an owner, reason, and review point.
 6. Do not force a workload into the standard when doing so makes it less reliable or harder to support.
 
-## Inventory Grain
+## Inventory grain
 
 The main inventory is one PDB occurrence per `DB_UNIQUE_NAME`.
 
@@ -29,9 +29,9 @@ Each inventory row identifies:
 - owner, SME, and manager;
 - Oracle version, architecture type, and cluster where applicable.
 
-CDB, RAC instance, cluster, and node data are supporting infrastructure context. They remain available for drill-down without multiplying the main PDB inventory rows.
+CDB, RAC instance, cluster, and node data are supporting infrastructure context. They remain available without multiplying the main PDB inventory rows.
 
-## CDB and RAC Topology
+## CDB and RAC topology
 
 Each CDB records:
 
@@ -46,7 +46,7 @@ RAC instances are modeled separately and tied to cluster nodes.
 
 PDBs belong to the CDB, not to an individual RAC instance. Services express expected workload placement.
 
-## Naming and Identity
+## Naming and identity
 
 Surrogate relational keys use Oracle identity columns where the value has no operational meaning.
 
@@ -54,7 +54,7 @@ Human-facing identifiers that do carry operational meaning remain explicit attri
 
 Environment and Data Guard role are stored as data instead of being inferred from a database name. Names may help an operator, but application logic should not depend on parsing them for state that can change.
 
-## Application Access and Privileges
+## Application access and privileges
 
 Runtime schemas receive only the privileges required by the application interface.
 
@@ -77,9 +77,9 @@ APPESTATE
   no direct ESTATE table access
 ```
 
-If future pages need to modify estate data, prefer controlled PL/SQL package interfaces with `EXECUTE` grants over direct DML on base tables.
+If write operations are introduced later, prefer controlled PL/SQL package interfaces with `EXECUTE` grants over direct DML on base tables.
 
-## High Availability and Data Guard
+## High availability and Data Guard
 
 Production-like CDBs have an explicit availability model.
 
@@ -110,7 +110,7 @@ Compliance is derived from expected versus observed state rather than maintained
 
 Every PDB has an application/project relationship and operational contacts.
 
-Accounts have their own project relationships because account ownership does not always match the PDB's primary application. Cross-project integration accounts are therefore represented directly instead of being treated as bad data.
+Accounts have their own project relationships because account ownership does not always match the PDB's primary application. Cross-project integration accounts are represented directly instead of being treated as bad data.
 
 The model should make these questions easy to answer:
 
@@ -140,9 +140,8 @@ Application context is reached through the CDB-to-PDB relationships rather than 
 
 Exceptions are first-class operational data, not hidden notes.
 
-An exception records:
+An exception targets either a PDB or a CDB and records:
 
-- affected PDB or CDB;
 - exception type;
 - description;
 - technical or business justification;
@@ -152,7 +151,7 @@ An exception records:
 
 A documented exception is not automatically a failure. The point is to make the deviation visible enough that the next operator understands why it exists and what must still be validated.
 
-## V1 Validation Conditions
+## V1 validation conditions
 
 The fictional estate deliberately includes a small number of non-green conditions:
 
@@ -162,10 +161,10 @@ The fictional estate deliberately includes a small number of non-green condition
 - an approved naming-standard exception;
 - a cross-project account ownership case.
 
-These are not mistakes in the seed data. They exist so the validation and reporting layers prove they can surface real operating questions instead of only displaying a perfect demo environment.
+These are not mistakes in the seed data. They exist so the validation and reporting layers prove they can surface real operating questions instead of only displaying a perfect environment.
 
-## Deferred Standards
+## Not modeled in V1
 
-V1 does not attempt to fully model RMAN backup execution, capacity history, OEM ingestion, change-management integration, or production observability.
+V1 does not model RMAN backup execution, capacity history, OEM ingestion, change-management integration, or production observability.
 
-Those controls should be added when the project has enough underlying data or automation to make the standard testable rather than writing requirements that the V1 implementation cannot yet prove.
+Those controls belong here when the project has enough underlying data or automation to make them testable. Writing requirements that the implementation cannot prove would add documentation without adding control.

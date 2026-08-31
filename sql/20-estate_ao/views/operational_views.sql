@@ -133,12 +133,12 @@ select p.cdb_name,
 create or replace view v_active_exceptions as
 select case
            when x.pdb_id is not null then pc.db_unique_name
-           when x.cdb_id is not null then c.db_unique_name
+           else c.db_unique_name
        end db_unique_name,
        coalesce(p.pdb_name, c.db_unique_name) target_name,
-       case when x.pdb_id is not null then 'PDB'
-            when x.cdb_id is not null then 'CDB'
-            else 'ESTATE'
+       case
+           when x.pdb_id is not null then 'PDB'
+           else 'CDB'
        end target_type,
        x.exception_type,
        x.description,

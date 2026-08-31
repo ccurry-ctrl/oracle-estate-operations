@@ -10,7 +10,7 @@
 -- for operational reporting and validation while leaving most of the estate
 -- healthy.
 --
--- Planned scenarios:
+-- Seeded scenarios:
 --   1. Service placement mismatch
 --   2. Patch level / scheduling exception
 --   3. Degraded Data Guard condition
@@ -315,4 +315,3 @@ prompt
 prompt === Operational state seed complete ===
 
 commit;
-

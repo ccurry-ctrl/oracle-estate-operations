@@ -27,4 +27,4 @@ alter session set current_schema = ESTATE_AO;
 
 alter session set current_schema = ADMIN;
 
-prompt === Installation complete. Run validate.sql next. ===
+prompt === Installation complete. Run seed.sql next. ===

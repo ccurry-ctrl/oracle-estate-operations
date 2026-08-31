@@ -192,6 +192,9 @@ create table standard_exception (
     active_flag         char(1) default 'Y' not null,
     constraint fk_exception_pdb foreign key (pdb_id) references pdb(pdb_id),
     constraint fk_exception_cdb foreign key (cdb_id) references cdb(cdb_id),
-    constraint ck_exception_target check (pdb_id is null or cdb_id is null),
+    constraint ck_exception_target check (
+        (pdb_id is not null and cdb_id is null)
+        or (pdb_id is null and cdb_id is not null)
+    ),
     constraint ck_exception_active check (active_flag in ('Y','N'))
 );
